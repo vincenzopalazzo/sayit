@@ -26,10 +26,10 @@ an authorization prompt, and an on-demand selected-text read; it does not
 monitor selection changes. Service lifecycle and API-token administration are
 never exposed over HTTP.
 
-The background speech agent allows local-network and cleartext HTTP only so
-Advanced remote TTS can reach user-run OpenAI-compatible servers on a LAN or
-tailnet. Prefer HTTPS endpoints when available. Remote API keys are stored in
-the Keychain and are never written to settings JSON.
+The background speech agent enables App Transport Security local-network
+exceptions so Advanced remote TTS can reach user-run servers on a LAN. Prefer
+HTTPS for non-local endpoints. Remote API keys are stored in the Keychain and
+are never written to settings JSON.
 
 The optional HTTP API is disabled by default and binds only to `127.0.0.1`.
 It validates the loopback Host header, has no permissive CORS policy, limits

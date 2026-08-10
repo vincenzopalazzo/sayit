@@ -7,13 +7,14 @@ enum RemoteTTSAudioDecoder {
         let sampleRate: Double
     }
 
+    /// Reject multi-hour remote payloads that would force huge buffers.
+    private static let maximumFrameCount: AVAudioFrameCount = 24_000 * 60 * 30
+
     static func decode(_ data: Data) throws -> DecodedPCM {
         guard !data.isEmpty else {
-            throw SynthesisError.remoteTTSInvalidAudio("The remote endpoint returned empty audio.")
-        }
-
-        if let pcm = decodeRawPCM16LE(data) {
-            return pcm
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote endpoint returned empty audio."
+            )
         }
 
         let decoded = try decodeContainer(data, preferredExtension: "wav")
@@ -22,6 +23,16 @@ enum RemoteTTSAudioDecoder {
         guard let decoded else {
             throw SynthesisError.remoteTTSInvalidAudio(
                 "Could not decode remote audio. Prefer response_format=wav or mp3."
+            )
+        }
+        guard decoded.sampleRate > 0 else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio reported an invalid sample rate."
+            )
+        }
+        guard !decoded.samples.isEmpty else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio file contained no samples."
             )
         }
         return decoded
@@ -45,22 +56,40 @@ enum RemoteTTSAudioDecoder {
             return nil
         }
         let format = file.processingFormat
-        let frameCount = AVAudioFrameCount(file.length)
-        guard frameCount > 0 else {
-            throw SynthesisError.remoteTTSInvalidAudio("The remote audio file contained no samples.")
+        let length = file.length
+        guard length > 0 else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio file contained no samples."
+            )
         }
+        guard length <= AVAudioFramePosition(maximumFrameCount) else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio is longer than the supported limit."
+            )
+        }
+
+        let frameCount = AVAudioFrameCount(length)
         guard let buffer = AVAudioPCMBuffer(
             pcmFormat: format,
             frameCapacity: frameCount
         ) else {
-            throw SynthesisError.remoteTTSInvalidAudio("Could not allocate an audio buffer.")
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "Could not allocate an audio buffer."
+            )
         }
         try file.read(into: buffer)
 
         let sampleRate = format.sampleRate
+        guard sampleRate > 0 else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio reported an invalid sample rate."
+            )
+        }
         let channelCount = Int(format.channelCount)
         guard channelCount > 0 else {
-            throw SynthesisError.remoteTTSInvalidAudio("The remote audio had no channels.")
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio had no channels."
+            )
         }
 
         var samples: [Float] = []
@@ -105,20 +134,5 @@ enum RemoteTTSAudioDecoder {
         }
 
         return DecodedPCM(samples: samples, sampleRate: sampleRate)
-    }
-
-    /// Detect bare PCM16 LE mono at 24 kHz when the payload has no container.
-    private static func decodeRawPCM16LE(_ data: Data) -> DecodedPCM? {
-        // Only treat as raw PCM when it looks like even-length PCM and lacks
-        // common container magic headers.
-        guard data.count >= 44, data.count % 2 == 0 else { return nil }
-        if data.starts(with: Data("RIFF".utf8)) { return nil }
-        if data.starts(with: Data("ID3".utf8)) { return nil }
-        if data.count >= 2, data[0] == 0xFF, data[1] & 0xE0 == 0xE0 { return nil } // MPEG
-        if data.starts(with: Data("OggS".utf8)) { return nil }
-        if data.starts(with: Data("fLaC".utf8)) { return nil }
-        // Prefer container decode for anything AVFoundation can open; raw path
-        // is intentionally unused unless we add an explicit response_format later.
-        return nil
     }
 }

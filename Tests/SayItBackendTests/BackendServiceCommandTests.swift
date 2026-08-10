@@ -232,6 +232,37 @@ struct BackendServiceCommandTests {
         #expect(!httpFailure.settings.httpEnabled)
     }
 
+    @Test("Disabling remote TTS re-checks that the active model is installed")
+    func disablingRemoteTTSRequiresInstalledModel() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.remove() }
+        await fixture.service.start()
+        let original = try snapshot(
+            await fixture.service.handle(.init(command: .snapshot))
+        ).settings
+
+        var remote = original
+        remote.remoteTTSEnabled = true
+        remote.remoteTTSBaseURL = "https://tts.example/v1"
+        remote.remoteTTSModel = "tts-1"
+        remote.remoteTTSVoice = "alloy"
+        #expect(
+            isAccepted(
+                await fixture.service.handle(
+                    .init(command: .updateSettings(remote))
+                )
+            )
+        )
+
+        var disabled = remote
+        disabled.remoteTTSEnabled = false
+        disabled.activeModelID = "missing-local-model"
+        let response = await fixture.service.handle(
+            .init(command: .updateSettings(disabled))
+        )
+        #expect(try failure(response).code == "settings.model_not_found")
+    }
+
     @Test("Submission validation and queue commands are deterministic")
     func submissionsAndQueueCommands() async throws {
         let fixture = try ServiceFixture()

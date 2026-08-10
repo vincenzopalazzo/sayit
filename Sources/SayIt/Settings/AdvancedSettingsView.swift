@@ -25,21 +25,21 @@ struct AdvancedSettingsView: View {
                     prompt: Text("https://host:port/v1")
                 )
                 .textFieldStyle(.roundedBorder)
-                .disableAutocorrection(true)
+                .autocorrectionDisabled()
                 .onChange(of: baseURL) { _, _ in
                     isDirty = true
                 }
 
                 TextField("Model id", text: $model, prompt: Text("tts-1"))
                     .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .onChange(of: model) { _, _ in
                         isDirty = true
                     }
 
                 TextField("Voice id", text: $voice, prompt: Text("alloy"))
                     .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .onChange(of: voice) { _, _ in
                         isDirty = true
                     }

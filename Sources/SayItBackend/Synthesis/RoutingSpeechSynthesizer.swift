@@ -16,8 +16,15 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     }
 
     func updateRemoteConfiguration(_ configuration: RemoteTTSConfiguration) async {
-        remoteEnabled = configuration.enabled
-        await remote.updateRemoteConfiguration(configuration)
+        if configuration.enabled {
+            // Apply remote settings before advertising the remote route so a
+            // re-entrant synthesize call cannot observe enabled+stale config.
+            await remote.updateRemoteConfiguration(configuration)
+            remoteEnabled = true
+        } else {
+            remoteEnabled = false
+            await remote.updateRemoteConfiguration(configuration)
+        }
     }
 
     func updateConfiguration(

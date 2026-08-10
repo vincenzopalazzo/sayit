@@ -134,12 +134,14 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         )
         urlRequest.timeoutInterval = max(5, configuration.timeoutSeconds)
 
-        if let apiKey = try await apiKeyProvider(),
-           !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            urlRequest.setValue(
-                "Bearer \(apiKey)",
-                forHTTPHeaderField: "Authorization"
-            )
+        if let apiKey = try await apiKeyProvider() {
+            let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedKey.isEmpty {
+                urlRequest.setValue(
+                    "Bearer \(trimmedKey)",
+                    forHTTPHeaderField: "Authorization"
+                )
+            }
         }
 
         // Prefer wav for reliable local decode. Servers that ignore this field
@@ -205,11 +207,14 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
 
         let decoded = try RemoteTTSAudioDecoder.decode(data)
         try checkOperation(operationID)
+        guard decoded.sampleRate > 0, !decoded.samples.isEmpty else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio could not be played."
+            )
+        }
 
         let generationDuration = ContinuousClock.now - startedAt
-        let audioDuration = decoded.sampleRate > 0
-            ? Double(decoded.samples.count) / decoded.sampleRate
-            : 0
+        let audioDuration = Double(decoded.samples.count) / decoded.sampleRate
 
         let audio = AudioChunk(
             requestID: request.id,

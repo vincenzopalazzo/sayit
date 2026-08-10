@@ -25,13 +25,11 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<!--
-	  Advanced remote TTS may target user-run OpenAI-compatible servers over
-	  http:// on a LAN or tailnet. Keep this limited to the background agent.
+	  Allow cleartext only for local-network hosts (LAN / link-local / some
+	  tailnet addresses). Prefer https:// for any non-local remote TTS endpoint.
 	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

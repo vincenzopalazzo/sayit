@@ -2823,9 +2823,12 @@ public final class SayItBackendService: SayItService {
                 message: "The selected model was not found."
             )
         }
-        if settings.activeModelID != previousModelID,
-           !installedModelIDs.contains(requestedModelID),
-           !settings.remoteTTSEnabled {
+        let disablingRemoteTTS = previousSettings.remoteTTSEnabled
+            && !settings.remoteTTSEnabled
+        let changingModel = settings.activeModelID != previousModelID
+        if !settings.remoteTTSEnabled,
+           (changingModel || disablingRemoteTTS),
+           !installedModelIDs.contains(requestedModelID) {
             throw ServiceFailure(
                 code: "model.not_installed",
                 message: "Install the model before selecting it."

@@ -54,7 +54,7 @@ struct ProtocolRoundTripTests {
             from: SayItWireCodec.encode(request)
         )
         #expect(decodedRequest == request)
-        #expect(SayItProtocolVersion.current == 6)
+        #expect(SayItProtocolVersion.current == 7)
     }
 
     @Test

@@ -326,11 +326,14 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         for request: URLRequest
     ) async throws -> (Data, URLResponse) {
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        if let http = response as? HTTPURLResponse,
-           http.expectedContentLength > maximumResponseBytes {
-            throw SynthesisError.remoteTTSTransport(
-                "The remote audio response exceeds the supported size limit."
-            )
+        if let http = response as? HTTPURLResponse {
+            let expectedLength = http.expectedContentLength
+            if expectedLength >= 0,
+               expectedLength > Int64(maximumResponseBytes) {
+                throw SynthesisError.remoteTTSTransport(
+                    "The remote audio response exceeds the supported size limit."
+                )
+            }
         }
 
         var data = Data()

@@ -106,6 +106,12 @@ struct AdvancedSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: synchronize)
+        .onChange(of: state.backendSettings) { _, _ in
+            // Keep the form aligned after a successful Apply or external snapshot.
+            if !isDirty {
+                synchronize()
+            }
+        }
     }
 
     private func synchronize() {

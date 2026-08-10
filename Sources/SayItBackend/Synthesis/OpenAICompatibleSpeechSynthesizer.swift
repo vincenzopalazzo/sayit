@@ -11,6 +11,8 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
 
     private var configuration: RemoteTTSConfiguration = .disabled
     private var chunker = TextChunker()
+    private var chunkDelay: Double = 0
+    private var paragraphPause: Double = 0
     private let apiKeyProvider: APIKeyProvider
     private let session: DataSession
     private var operationGeneration: UInt64 = 0
@@ -38,9 +40,9 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         paragraphPause: Double,
         idleUnloadDelay: Double
     ) async {
-        _ = chunkDelay
-        _ = paragraphPause
         _ = idleUnloadDelay
+        self.chunkDelay = max(chunkDelay, 0)
+        self.paragraphPause = max(paragraphPause, 0)
         let target = max(chunkTarget, 1)
         chunker = TextChunker(
             targetCharacterCount: target,
@@ -140,11 +142,15 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         }
 
         let endpoint = try configuration.speechEndpointURL()
-        let startedAt = ContinuousClock.now
 
         for (index, chunk) in chunks.enumerated() {
             try checkOperation(operationID)
+            if index > 0, chunkDelay > 0 {
+                try await Task.sleep(for: .seconds(chunkDelay))
+                try checkOperation(operationID)
+            }
             continuation.yield(.chunkStarted(index: index, chunk: chunk))
+            let startedAt = ContinuousClock.now
 
             var urlRequest = URLRequest(url: endpoint)
             urlRequest.httpMethod = "POST"
@@ -209,13 +215,20 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
             }
 
             let generationDuration = ContinuousClock.now - startedAt
-            let audioDuration = Double(decoded.samples.count) / decoded.sampleRate
+            var samples = decoded.samples
+            if chunk.startsParagraph, index > 0, paragraphPause > 0 {
+                let pauseFrames = Int(decoded.sampleRate * paragraphPause)
+                if pauseFrames > 0 {
+                    samples = Array(repeating: 0, count: pauseFrames) + samples
+                }
+            }
+            let audioDuration = Double(samples.count) / decoded.sampleRate
             continuation.yield(
                 .audio(
                     AudioChunk(
                         requestID: request.id,
                         index: index,
-                        samples: decoded.samples,
+                        samples: samples,
                         sampleRate: decoded.sampleRate,
                         startsParagraph: chunk.startsParagraph
                     )

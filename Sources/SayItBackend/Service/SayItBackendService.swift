@@ -1630,7 +1630,14 @@ public final class SayItBackendService: SayItService {
         )
         let request: SpeechRequest
         if settings.remoteTTSEnabled {
+            let selectionVoice: String? = {
+                if case .preset(let voice)? = submission.voiceSelection {
+                    return nonEmpty(voice)
+                }
+                return nil
+            }()
             let remoteVoice = submission.voice.flatMap(nonEmpty)
+                ?? selectionVoice
                 ?? nonEmpty(settings.remoteTTSVoice)
             request = SpeechRequest(
                 id: id,

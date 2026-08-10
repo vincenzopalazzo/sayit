@@ -47,22 +47,39 @@ struct RemoteTTSConfiguration: Equatable, Sendable {
     }
 
     static func isLocalNetworkHost(_ host: String) -> Bool {
-        if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+        if host == "localhost" || host == "::1" {
             return true
         }
-        if host.hasSuffix(".local") {
+        if host.hasSuffix(".local") || host.hasSuffix(".ts.net") {
             return true
         }
-        // Tailscale MagicDNS and similar private mesh names.
-        if host.hasSuffix(".ts.net") {
-            return true
+        if let ipv4 = parseIPv4(host) {
+            return isPrivateIPv4(ipv4)
         }
-        // RFC1918 IPv4 prefixes commonly used on LAN.
-        if host.hasPrefix("10.")
-            || host.hasPrefix("192.168.")
-            || host.range(of: #"^172\.(1[6-9]|2[0-9]|3[0-1])\."#, options: .regularExpression) != nil {
-            return true
+        return false
+    }
+
+    private static func parseIPv4(_ host: String) -> (UInt8, UInt8, UInt8, UInt8)? {
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return nil }
+        var octets: [UInt8] = []
+        octets.reserveCapacity(4)
+        for part in parts {
+            guard let value = UInt8(part) else { return nil }
+            octets.append(value)
         }
+        return (octets[0], octets[1], octets[2], octets[3])
+    }
+
+    private static func isPrivateIPv4(
+        _ ip: (UInt8, UInt8, UInt8, UInt8)
+    ) -> Bool {
+        let (a, b, _, _) = ip
+        if a == 127 { return true } // loopback
+        if a == 10 { return true }
+        if a == 192 && b == 168 { return true }
+        if a == 172 && (16...31).contains(b) { return true }
+        if a == 169 && b == 254 { return true } // link-local
         return false
     }
 

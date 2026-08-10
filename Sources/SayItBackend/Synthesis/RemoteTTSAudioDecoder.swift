@@ -8,9 +8,10 @@ enum RemoteTTSAudioDecoder {
     }
 
     /// Reject multi-hour remote payloads that would force huge buffers.
-    private static let maximumFrameCount: AVAudioFrameCount = 24_000 * 60 * 30
-    private static let maximumChannelCount: AVAudioChannelCount = 8
-    private static let maximumTotalSamples = Int(maximumFrameCount) * Int(maximumChannelCount)
+    private static let maximumFrameCount: AVAudioFrameCount = 48_000 * 60 * 10
+    private static let maximumChannelCount: AVAudioChannelCount = 2
+    /// Hard memory budget independent of channel count (~10 min mono float32).
+    private static let maximumTotalSamples = 48_000 * 60 * 10
 
     static func decode(_ data: Data) throws -> DecodedPCM {
         guard !data.isEmpty else {

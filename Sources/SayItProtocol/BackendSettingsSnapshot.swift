@@ -215,13 +215,6 @@ public struct BackendSettingsSnapshot: Codable, Equatable, Sendable {
             Double.self,
             forKey: .remoteTTSTimeoutSeconds
         ) ?? 120
-        if remoteTTSEnabled {
-            let hasURL = !(remoteTTSBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            let hasModel = !(remoteTTSModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            if !hasURL || !hasModel {
-                remoteTTSEnabled = false
-            }
-        }
         chunkCharacterTarget = try container.decodeIfPresent(
             Int.self,
             forKey: .chunkCharacterTarget

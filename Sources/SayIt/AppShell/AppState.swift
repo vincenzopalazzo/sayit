@@ -60,6 +60,8 @@ final class AppState {
     private(set) var httpAPIErrorMessage: String?
     private(set) var remoteTTSErrorMessage: String?
     private(set) var remoteTTSAPIKeyMessage: String?
+    @ObservationIgnored
+    private var remoteTTSSettingsGeneration: UInt64 = 0
     private(set) var apiTokenErrorMessage: String?
     private(set) var oneTimeTokenSecret: String?
     private(set) var updateStatus = "Not checked yet"
@@ -936,12 +938,16 @@ final class AppState {
         snapshot.remoteTTSVoice = voice
         snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
         remoteTTSErrorMessage = nil
+        remoteTTSSettingsGeneration &+= 1
+        let generation = remoteTTSSettingsGeneration
         Task {
             do {
                 let response = try await send(.updateSettings(snapshot))
                 try requireSuccess(response)
+                guard generation == remoteTTSSettingsGeneration else { return }
                 backendSettings = snapshot
             } catch {
+                guard generation == remoteTTSSettingsGeneration else { return }
                 remoteTTSErrorMessage = error.localizedDescription
             }
         }

@@ -21,6 +21,12 @@ struct RemoteTTSConfigurationTests {
         #expect(
             RemoteTTSConfiguration.parseBaseURL("http://example.com/v1") == nil
         )
+        #expect(
+            RemoteTTSConfiguration.parseBaseURL("http://10.example.com/v1") == nil
+        )
+        #expect(
+            RemoteTTSConfiguration.parseBaseURL("http://192.168.attacker.com/v1") == nil
+        )
         #expect(RemoteTTSConfiguration.parseBaseURL("") == nil)
         #expect(RemoteTTSConfiguration.parseBaseURL("ftp://nope") == nil)
         #expect(RemoteTTSConfiguration.parseBaseURL("not a url") == nil)

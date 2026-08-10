@@ -103,6 +103,11 @@ enum RemoteTTSAudioDecoder {
             )
         }
         try file.read(into: buffer)
+        guard buffer.frameLength == frameCount else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio was truncated before decoding finished."
+            )
+        }
 
         guard let channelData = buffer.floatChannelData else {
             throw SynthesisError.remoteTTSInvalidAudio(

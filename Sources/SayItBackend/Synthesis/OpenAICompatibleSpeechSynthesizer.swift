@@ -205,7 +205,9 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
             )
         }
 
-        let decoded = try RemoteTTSAudioDecoder.decode(data)
+        let decoded = try await Task.detached(priority: .userInitiated) {
+            try RemoteTTSAudioDecoder.decode(data)
+        }.value
         try checkOperation(operationID)
         guard decoded.sampleRate > 0, !decoded.samples.isEmpty else {
             throw SynthesisError.remoteTTSInvalidAudio(

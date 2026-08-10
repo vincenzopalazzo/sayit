@@ -8,6 +8,7 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     private var remoteEnabled = false
     /// Serializes configuration updates so remote settings cannot apply out of order.
     private var configurationChain: Task<Void, Never> = Task {}
+    private var configurationGeneration: UInt64 = 0
 
     init(
         local: any BackendSpeechSynthesizing,
@@ -18,6 +19,8 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     }
 
     func updateRemoteConfiguration(_ configuration: RemoteTTSConfiguration) async {
+        configurationGeneration &+= 1
+        let generation = configurationGeneration
         let previous = configurationChain
         let task = Task { [remote] in
             await previous.value
@@ -25,10 +28,8 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
         }
         configurationChain = task
         await task.value
-        // Only the latest completed chain head may publish routing state.
-        if configurationChain == task {
-            remoteEnabled = configuration.enabled
-        }
+        guard generation == configurationGeneration else { return }
+        remoteEnabled = configuration.enabled
     }
 
     func updateConfiguration(
@@ -53,10 +54,11 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
 
     func prepareDependencies(for model: ModelDescriptor) async throws {
         await configurationChain.value
+        // Local install/import always prepares the MLX model. Remote mode only
+        // validates endpoint configuration in addition.
+        try await local.prepareDependencies(for: model)
         if remoteEnabled {
             try await remote.prepareDependencies(for: model)
-        } else {
-            try await local.prepareDependencies(for: model)
         }
     }
 

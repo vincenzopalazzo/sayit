@@ -931,14 +931,14 @@ final class AppState {
         voice: String,
         timeoutSeconds: Double
     ) {
-        var snapshot = backendSettings
-        snapshot.remoteTTSEnabled = enabled
-        snapshot.remoteTTSBaseURL = baseURL
-        snapshot.remoteTTSModel = model
-        snapshot.remoteTTSVoice = voice
-        snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
         enqueueRemoteTTSSettingsWork { [weak self] in
             guard let self else { return }
+            var snapshot = self.backendSettings
+            snapshot.remoteTTSEnabled = enabled
+            snapshot.remoteTTSBaseURL = baseURL
+            snapshot.remoteTTSModel = model
+            snapshot.remoteTTSVoice = voice
+            snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
             self.remoteTTSErrorMessage = nil
             do {
                 let response = try await self.send(.updateSettings(snapshot))
@@ -1374,7 +1374,12 @@ final class AppState {
             guard let self, !Task.isCancelled else { return }
             let snapshot = self.settings.backendSnapshot(
                 httpEnabled: self.backendSettings.httpEnabled,
-                httpPort: self.backendSettings.httpPort
+                httpPort: self.backendSettings.httpPort,
+                remoteTTSEnabled: self.backendSettings.remoteTTSEnabled,
+                remoteTTSBaseURL: self.backendSettings.remoteTTSBaseURL,
+                remoteTTSModel: self.backendSettings.remoteTTSModel,
+                remoteTTSVoice: self.backendSettings.remoteTTSVoice,
+                remoteTTSTimeoutSeconds: self.backendSettings.remoteTTSTimeoutSeconds
             )
             self.backendSettings = snapshot
             do {

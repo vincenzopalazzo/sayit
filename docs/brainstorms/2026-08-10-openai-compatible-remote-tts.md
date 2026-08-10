@@ -15,7 +15,7 @@
 - Auth via bearer token (and optionally custom headers); base URL configurable.
 - Prefer HTTPS for any non-local endpoint; allow http:// only for verified local-network IPs/hosts (loopback, RFC1918, .local, .ts.net).
 - Compatible with common OpenAI-style TTS APIs (`POST /v1/audio/speech` with `model`, `voice`, `input`, audio bytes back)—exact dialect may vary; document assumptions.
-- No credentials in git; store secrets in Keychain (or equivalent), not plain `Backend Settings.json` if possible.
+- No credentials in git; store secrets in Keychain only, never plain `Backend Settings.json`.
 - Do not break XPC app/CLI path or existing loopback automation API.
 - Apple silicon still required for local mode; remote mode should work even when local MLX models are absent (or degrade gracefully).
 

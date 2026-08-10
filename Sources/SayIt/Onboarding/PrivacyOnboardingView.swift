@@ -5,10 +5,13 @@ struct PrivacyOnboardingView: View {
         OnboardingPage(
             symbol: "lock.shield",
             title: "Private by design",
-            subtitle: "Your text and generated audio stay on this Mac. Say It connects only when you download a model or check for an update."
+            subtitle: "By default, your text and generated audio stay on this Mac. Say It connects for model downloads, update checks, and only if you opt into Advanced remote TTS."
         ) {
             VStack(alignment: .leading, spacing: DesignTokens.standardSpacing) {
-                Label("No cloud speech service", systemImage: "icloud.slash")
+                Label(
+                    "Local speech by default; remote TTS is opt-in",
+                    systemImage: "icloud.slash"
+                )
                 Label(
                     "No passive clipboard monitoring",
                     systemImage: "doc.on.clipboard"

@@ -50,7 +50,10 @@ struct RemoteTTSConfiguration: Equatable, Sendable {
         if host == "localhost" || host == "::1" {
             return true
         }
-        if host.hasSuffix(".local") || host.hasSuffix(".ts.net") {
+        // `.local` is covered by ATS local-networking. Public-suffix mesh names
+        // such as `.ts.net` need HTTPS because NSAllowsLocalNetworking does not
+        // treat them as local.
+        if host.hasSuffix(".local") {
             return true
         }
         if let ipv4 = parseIPv4(host) {

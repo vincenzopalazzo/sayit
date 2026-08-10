@@ -67,7 +67,7 @@ struct OpenAICompatibleSpeechSynthesizerTests {
         ) as? [String: Any]
         #expect(body?["model"] as? String == "remote-model")
         #expect(body?["input"] as? String == "Hello from Say It")
-        #expect(body?["voice"] as? String == "alloy")
+        #expect(body?["voice"] as? String == "local-voice")
         #expect(body?["response_format"] as? String == "wav")
         #expect(body?.keys.contains("format") != true)
 
@@ -162,6 +162,160 @@ struct OpenAICompatibleSpeechSynthesizerTests {
         } catch let error as SynthesisError {
             guard case .remoteTTSInvalidConfiguration = error else {
                 Issue.record("Unexpected error \(error)")
+                return
+            }
+        }
+    }
+
+
+    @Test("Prefers request voice and encodes speaking pace")
+    func prefersRequestVoiceAndSpeed() async throws {
+        let wav = try makeSilentWAV(sampleRate: 24_000, frames: 2_400)
+        nonisolated(unsafe) var body: [String: Any]?
+        let synthesizer = OpenAICompatibleSpeechSynthesizer(
+            apiKeyProvider: { nil },
+            session: { request in
+                body = try JSONSerialization.jsonObject(
+                    with: try #require(request.httpBody)
+                ) as? [String: Any]
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "audio/wav"]
+                )!
+                return (wav, response)
+            }
+        )
+        await synthesizer.updateRemoteConfiguration(
+            RemoteTTSConfiguration(
+                enabled: true,
+                baseURL: URL(string: "https://tts.example/v1"),
+                model: "remote-model",
+                voice: "default-voice",
+                timeoutSeconds: 30
+            )
+        )
+        let request = SpeechRequest(
+            cleanedText: CleanedText(
+                text: "Hello pace",
+                title: "Hello",
+                detectedLanguage: "en",
+                cleanupSummary: .empty,
+                requiresLongTextConfirmation: false
+            ),
+            model: try sampleModel(),
+            voice: "request-voice",
+            language: "en",
+            speakingPace: .fast,
+            source: .frontend
+        )
+        for try await _ in await synthesizer.synthesize(request) {}
+        let sent = try #require(body)
+        #expect(sent["voice"] as? String == "request-voice")
+        #expect(sent["speed"] as? Double == SpeakingPace.fast.rawValue)
+    }
+
+    @Test("Chunks long text into multiple remote requests")
+    func chunksLongText() async throws {
+        let wav = try makeSilentWAV(sampleRate: 24_000, frames: 2_400)
+        nonisolated(unsafe) var inputs: [String] = []
+        let synthesizer = OpenAICompatibleSpeechSynthesizer(
+            apiKeyProvider: { nil },
+            session: { request in
+                let body = try JSONSerialization.jsonObject(
+                    with: try #require(request.httpBody)
+                ) as? [String: Any]
+                inputs.append(body?["input"] as? String ?? "")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "audio/wav"]
+                )!
+                return (wav, response)
+            }
+        )
+        await synthesizer.updateRemoteConfiguration(
+            RemoteTTSConfiguration(
+                enabled: true,
+                baseURL: URL(string: "https://tts.example/v1"),
+                model: "remote-model",
+                voice: "alloy",
+                timeoutSeconds: 30
+            )
+        )
+        await synthesizer.updateConfiguration(
+            chunkTarget: 40,
+            chunkDelay: 0,
+            paragraphPause: 0,
+            idleUnloadDelay: 0
+        )
+        let text = Array(repeating: "This is a sentence about remote speech. ", count: 8)
+            .joined()
+        let request = SpeechRequest(
+            cleanedText: CleanedText(
+                text: text,
+                title: "Long",
+                detectedLanguage: "en",
+                cleanupSummary: .empty,
+                requiresLongTextConfirmation: false
+            ),
+            model: try sampleModel(),
+            voice: "alloy",
+            language: "en",
+            source: .frontend
+        )
+        for try await _ in await synthesizer.synthesize(request) {}
+        #expect(inputs.count > 1)
+    }
+
+    @Test("Rejects oversized remote responses before decoding")
+    func rejectsOversizedResponses() async throws {
+        let tooBig = OpenAICompatibleSpeechSynthesizer.maximumResponseBytes + 1
+        let synthesizer = OpenAICompatibleSpeechSynthesizer(
+            apiKeyProvider: { nil },
+            session: { request in
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: [
+                        "Content-Type": "audio/wav",
+                        "Content-Length": String(tooBig)
+                    ]
+                )!
+                return (Data(count: tooBig), response)
+            }
+        )
+        await synthesizer.updateRemoteConfiguration(
+            RemoteTTSConfiguration(
+                enabled: true,
+                baseURL: URL(string: "https://tts.example/v1"),
+                model: "remote-model",
+                voice: "alloy",
+                timeoutSeconds: 30
+            )
+        )
+        let request = SpeechRequest(
+            cleanedText: CleanedText(
+                text: "Hi",
+                title: "Hi",
+                detectedLanguage: nil,
+                cleanupSummary: .empty,
+                requiresLongTextConfirmation: false
+            ),
+            model: try sampleModel(),
+            voice: nil,
+            language: nil,
+            source: .frontend
+        )
+        do {
+            for try await _ in await synthesizer.synthesize(request) {}
+            Issue.record("Expected oversized response failure")
+        } catch let error as SynthesisError {
+            guard case .remoteTTSTransport = error else {
+                Issue.record("Unexpected oversized-response error")
                 return
             }
         }

@@ -6,7 +6,11 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
     typealias APIKeyProvider = @Sendable () async throws -> String?
     typealias DataSession = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
+    /// Reject oversized remote payloads before they occupy unbounded memory.
+    static let maximumResponseBytes = 32 * 1_024 * 1_024
+
     private var configuration: RemoteTTSConfiguration = .disabled
+    private var chunker = TextChunker()
     private let apiKeyProvider: APIKeyProvider
     private let session: DataSession
     private var operationGeneration: UInt64 = 0
@@ -15,7 +19,9 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
     init(
         apiKeyProvider: @escaping APIKeyProvider,
         session: @escaping DataSession = { request in
-            try await URLSession.shared.data(for: request)
+            try await OpenAICompatibleSpeechSynthesizer.loadBoundedResponse(
+                for: request
+            )
         }
     ) {
         self.apiKeyProvider = apiKeyProvider
@@ -32,10 +38,14 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         paragraphPause: Double,
         idleUnloadDelay: Double
     ) async {
-        _ = chunkTarget
         _ = chunkDelay
         _ = paragraphPause
         _ = idleUnloadDelay
+        let target = max(chunkTarget, 1)
+        chunker = TextChunker(
+            targetCharacterCount: target,
+            hardCharacterLimit: max(target * 2, 1_000)
+        )
     }
 
     func prepareDependencies(for model: ModelDescriptor) async throws {
@@ -122,72 +132,130 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
             throw SynthesisError.remoteTTSInvalidConfiguration("There is no text to speak.")
         }
 
-        let voice = nonEmpty(configuration.voice) ?? nonEmpty(request.voice)
+        // Prefer the per-request voice (CLI/HTTP/submission) over Advanced default.
+        let voice = nonEmpty(request.voice) ?? nonEmpty(configuration.voice)
+        let chunks = chunker.chunks(for: text)
+        guard !chunks.isEmpty else {
+            throw SynthesisError.remoteTTSInvalidConfiguration("There is no text to speak.")
+        }
 
         let endpoint = try configuration.speechEndpointURL()
-        var urlRequest = URLRequest(url: endpoint)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue(
-            "audio/*, application/octet-stream",
-            forHTTPHeaderField: "Accept"
-        )
-        urlRequest.timeoutInterval = max(5, configuration.timeoutSeconds)
+        let startedAt = ContinuousClock.now
 
-        if let apiKey = try await apiKeyProvider() {
-            let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedKey.isEmpty {
-                urlRequest.setValue(
-                    "Bearer \(trimmedKey)",
-                    forHTTPHeaderField: "Authorization"
+        for (index, chunk) in chunks.enumerated() {
+            try checkOperation(operationID)
+            continuation.yield(.chunkStarted(index: index, chunk: chunk))
+
+            var urlRequest = URLRequest(url: endpoint)
+            urlRequest.httpMethod = "POST"
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue(
+                "audio/*, application/octet-stream",
+                forHTTPHeaderField: "Accept"
+            )
+            urlRequest.timeoutInterval = max(5, configuration.timeoutSeconds)
+
+            if let apiKey = try await apiKeyProvider() {
+                let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedKey.isEmpty {
+                    urlRequest.setValue(
+                        "Bearer \(trimmedKey)",
+                        forHTTPHeaderField: "Authorization"
+                    )
+                }
+            }
+
+            var body: [String: Any] = [
+                "model": modelName,
+                "input": chunk.text,
+                "response_format": "wav"
+            ]
+            if let voice {
+                body["voice"] = voice
+            }
+            let speed = request.speakingPace.rawValue
+            if abs(speed - 1) > 0.001 {
+                body["speed"] = min(max(speed, 0.25), 4)
+            }
+            urlRequest.httpBody = try JSONSerialization.data(
+                withJSONObject: body,
+                options: []
+            )
+
+            let (data, response): (Data, URLResponse)
+            do {
+                (data, response) = try await session(urlRequest)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let urlError as URLError where urlError.code == .cancelled {
+                throw CancellationError()
+            } catch let error as SynthesisError {
+                throw error
+            } catch {
+                throw SynthesisError.remoteTTSTransport(error.localizedDescription)
+            }
+
+            try checkOperation(operationID)
+            try validateHTTPResponse(response, data: data)
+
+            let decoded = try await Task.detached(priority: .userInitiated) {
+                try RemoteTTSAudioDecoder.decode(data)
+            }.value
+            try checkOperation(operationID)
+            guard decoded.sampleRate > 0, !decoded.samples.isEmpty else {
+                throw SynthesisError.remoteTTSInvalidAudio(
+                    "The remote audio could not be played."
                 )
             }
+
+            let generationDuration = ContinuousClock.now - startedAt
+            let audioDuration = Double(decoded.samples.count) / decoded.sampleRate
+            continuation.yield(
+                .audio(
+                    AudioChunk(
+                        requestID: request.id,
+                        index: index,
+                        samples: decoded.samples,
+                        sampleRate: decoded.sampleRate,
+                        startsParagraph: chunk.startsParagraph
+                    )
+                )
+            )
+            continuation.yield(
+                .metrics(
+                    SynthesisMetrics(
+                        chunkIndex: index,
+                        generationDuration: generationDuration.timeInterval,
+                        audioDuration: audioDuration
+                    )
+                )
+            )
         }
 
-        // Prefer wav for reliable local decode. Servers that ignore this field
-        // and return mp3/other containers are still handled by the decoder.
-        var body: [String: Any] = [
-            "model": modelName,
-            "input": text,
-            "response_format": "wav"
-        ]
-        if let voice {
-            body["voice"] = voice
-        }
-        urlRequest.httpBody = try JSONSerialization.data(
-            withJSONObject: body,
-            options: []
-        )
+        continuation.yield(.completed)
+    }
 
-        try checkOperation(operationID)
-        let chunk = SpeechChunk(
-            id: 0,
-            text: text,
-            startsParagraph: true,
-            sourceRange: 0..<text.count
-        )
-        continuation.yield(.chunkStarted(index: 0, chunk: chunk))
-
-        let startedAt = ContinuousClock.now
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session(urlRequest)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let urlError as URLError where urlError.code == .cancelled {
-            throw CancellationError()
-        } catch {
-            throw SynthesisError.remoteTTSTransport(error.localizedDescription)
-        }
-
-        try checkOperation(operationID)
-
+    private func validateHTTPResponse(
+        _ response: URLResponse,
+        data: Data
+    ) throws {
         guard let http = response as? HTTPURLResponse else {
             throw SynthesisError.remoteTTSTransport(
                 "The remote endpoint returned a non-HTTP response."
             )
         }
-
+        let expectedLength = http.expectedContentLength
+        if expectedLength >= 0,
+           expectedLength > Int64(Self.maximumResponseBytes) {
+            throw SynthesisError.remoteTTSTransport(
+                "The remote audio response exceeds the supported size limit."
+            )
+        }
+        if data.count > Self.maximumResponseBytes {
+            throw SynthesisError.remoteTTSTransport(
+                "The remote audio response exceeds the supported size limit."
+            )
+        }
         guard (200...299).contains(http.statusCode) else {
             let detail = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -204,38 +272,6 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
                 detail: summary
             )
         }
-
-        let decoded = try await Task.detached(priority: .userInitiated) {
-            try RemoteTTSAudioDecoder.decode(data)
-        }.value
-        try checkOperation(operationID)
-        guard decoded.sampleRate > 0, !decoded.samples.isEmpty else {
-            throw SynthesisError.remoteTTSInvalidAudio(
-                "The remote audio could not be played."
-            )
-        }
-
-        let generationDuration = ContinuousClock.now - startedAt
-        let audioDuration = Double(decoded.samples.count) / decoded.sampleRate
-
-        let audio = AudioChunk(
-            requestID: request.id,
-            index: 0,
-            samples: decoded.samples,
-            sampleRate: decoded.sampleRate,
-            startsParagraph: true
-        )
-        continuation.yield(.audio(audio))
-        continuation.yield(
-            .metrics(
-                SynthesisMetrics(
-                    chunkIndex: 0,
-                    generationDuration: generationDuration.timeInterval,
-                    audioDuration: audioDuration
-                )
-            )
-        )
-        continuation.yield(.completed)
     }
 
     private func requiredModelName() throws -> String {
@@ -284,6 +320,35 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func loadBoundedResponse(
+        for request: URLRequest
+    ) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        if let http = response as? HTTPURLResponse,
+           http.expectedContentLength > maximumResponseBytes {
+            throw SynthesisError.remoteTTSTransport(
+                "The remote audio response exceeds the supported size limit."
+            )
+        }
+
+        var data = Data()
+        data.reserveCapacity(
+            min(
+                maximumResponseBytes,
+                max(0, Int((response as? HTTPURLResponse)?.expectedContentLength ?? 0))
+            )
+        )
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > maximumResponseBytes {
+                throw SynthesisError.remoteTTSTransport(
+                    "The remote audio response exceeds the supported size limit."
+                )
+            }
+        }
+        return (data, response)
     }
 }
 

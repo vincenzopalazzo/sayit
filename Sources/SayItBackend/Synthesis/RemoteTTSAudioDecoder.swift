@@ -70,7 +70,15 @@ enum RemoteTTSAudioDecoder {
                 "The remote audio file contained no samples."
             )
         }
-        guard length <= AVAudioFramePosition(maximumFrameCount) else {
+        let maxDurationSeconds = 10.0 * 60.0
+        let maxFramesForRate = AVAudioFramePosition(
+            max(1, format.sampleRate * maxDurationSeconds)
+        )
+        let frameLimit = min(
+            AVAudioFramePosition(maximumFrameCount),
+            maxFramesForRate
+        )
+        guard length <= frameLimit else {
             throw SynthesisError.remoteTTSInvalidAudio(
                 "The remote audio is longer than the supported limit."
             )

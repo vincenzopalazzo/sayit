@@ -943,7 +943,15 @@ final class AppState {
             do {
                 let response = try await self.send(.updateSettings(snapshot))
                 try self.requireSuccess(response)
-                self.backendSettings = snapshot
+                // Merge only remote fields so a concurrent ordinary settings
+                // update that landed during await is not overwritten.
+                var latest = self.backendSettings
+                latest.remoteTTSEnabled = snapshot.remoteTTSEnabled
+                latest.remoteTTSBaseURL = snapshot.remoteTTSBaseURL
+                latest.remoteTTSModel = snapshot.remoteTTSModel
+                latest.remoteTTSVoice = snapshot.remoteTTSVoice
+                latest.remoteTTSTimeoutSeconds = snapshot.remoteTTSTimeoutSeconds
+                self.backendSettings = latest
             } catch {
                 self.remoteTTSErrorMessage = error.localizedDescription
             }

@@ -1,8 +1,10 @@
 # Security and Privacy
 
-Say It processes selected and copied text locally. It does not use analytics,
-telemetry, cloud inference, passive clipboard or microphone monitoring, Apple
-Events, or broad filesystem access. Its optional selection shortcut uses a
+Say It processes selected and copied text locally by default. It does not use
+analytics, telemetry, passive clipboard or microphone monitoring, Apple Events,
+or broad filesystem access. Cloud or remote inference happens only when you
+explicitly enable Advanced remote OpenAI-compatible TTS and speak text; the API
+key for that endpoint is stored in the Keychain. Its optional selection shortcut uses a
 dedicated Accessibility helper only when the user explicitly configures access
 or invokes that shortcut.
 

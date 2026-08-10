@@ -53,6 +53,7 @@ public enum ServiceCommand: Codable, Sendable {
     case exportDiagnostics
     case clearDiagnostics
     case updateSettings(BackendSettingsSnapshot)
+    case setRemoteTTSAPIKey(String?)
     case tokens
     case createToken(name: String, scopes: Set<APITokenScope>)
     case revokeToken(UUID)

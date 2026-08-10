@@ -58,6 +58,8 @@ final class AppState {
     private(set) var voiceProfiles: [VoiceProfileSnapshot] = []
     private(set) var voiceStudio: VoiceStudioSnapshot?
     private(set) var httpAPIErrorMessage: String?
+    private(set) var remoteTTSErrorMessage: String?
+    private(set) var remoteTTSAPIKeyMessage: String?
     private(set) var apiTokenErrorMessage: String?
     private(set) var oneTimeTokenSecret: String?
     private(set) var updateStatus = "Not checked yet"
@@ -918,6 +920,54 @@ final class AppState {
                 httpAPIErrorMessage = error.localizedDescription
             }
         }
+    }
+
+    func updateRemoteTTS(
+        enabled: Bool,
+        baseURL: String,
+        model: String,
+        voice: String,
+        timeoutSeconds: Double
+    ) {
+        var snapshot = backendSettings
+        snapshot.remoteTTSEnabled = enabled
+        snapshot.remoteTTSBaseURL = baseURL
+        snapshot.remoteTTSModel = model
+        snapshot.remoteTTSVoice = voice
+        snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
+        backendSettings = snapshot
+        remoteTTSErrorMessage = nil
+        Task {
+            do {
+                let response = try await send(.updateSettings(snapshot))
+                try requireSuccess(response)
+            } catch {
+                remoteTTSErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func setRemoteTTSAPIKey(_ key: String) {
+        remoteTTSAPIKeyMessage = nil
+        remoteTTSErrorMessage = nil
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                let response = try await send(
+                    .setRemoteTTSAPIKey(trimmed.isEmpty ? nil : trimmed)
+                )
+                try requireSuccess(response)
+                remoteTTSAPIKeyMessage = trimmed.isEmpty
+                    ? "API key cleared."
+                    : "API key saved in the Keychain."
+            } catch {
+                remoteTTSErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func clearRemoteTTSAPIKey() {
+        setRemoteTTSAPIKey("")
     }
 
     func restartBackgroundService() {

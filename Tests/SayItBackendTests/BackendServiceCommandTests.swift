@@ -171,6 +171,22 @@ struct BackendServiceCommandTests {
         value = original
         value.httpPort = 1_023
         invalidCases.append((value, "settings.invalid_http_port"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "not-a-url"
+        value.remoteTTSModel = "tts-1"
+        invalidCases.append((value, "settings.invalid_remote_tts_url"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "https://tts.example/v1"
+        value.remoteTTSModel = " "
+        invalidCases.append((value, "settings.invalid_remote_tts_model"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "https://tts.example/v1"
+        value.remoteTTSModel = "tts-1"
+        value.remoteTTSTimeoutSeconds = 1
+        invalidCases.append((value, "settings.invalid_remote_tts_timeout"))
 
         for (settings, code) in invalidCases {
             let response = await fixture.service.handle(

@@ -17,6 +17,8 @@ public final class SayItBackendService: SayItService {
     private let voiceProfiles: VoiceProfileStore
     private let diagnostics: DiagnosticRecorder
     private let huggingFaceTokenStore: KeychainTokenStore
+    private let remoteTTSAPIKeyStore: RemoteTTSAPIKeyStore
+    private let routingSynthesizer: RoutingSpeechSynthesizer?
     private let apiTokenStore = APITokenStore()
     private let settingsStore: BackendSettingsStore
     private let jobJournalStore: JobJournalStore
@@ -100,6 +102,7 @@ public final class SayItBackendService: SayItService {
         let history = try HistoryStore(directories: directories)
         let voiceProfiles = VoiceProfileStore(directories: directories)
         let tokenStore = KeychainTokenStore()
+        let remoteTTSAPIKeyStore = RemoteTTSAPIKeyStore()
         let manager = modelManagerOverride ?? ModelManager(
             catalog: catalog,
             directories: directories,
@@ -115,17 +118,29 @@ public final class SayItBackendService: SayItService {
         self.history = history
         self.voiceProfiles = voiceProfiles
         huggingFaceTokenStore = tokenStore
+        self.remoteTTSAPIKeyStore = remoteTTSAPIKeyStore
         modelManager = manager
         models = catalog.models
         let resolvedSynthesizer: any BackendSpeechSynthesizing
+        let resolvedRouting: RoutingSpeechSynthesizer?
         if let synthesizer {
             resolvedSynthesizer = synthesizer
+            resolvedRouting = nil
         } else {
-            resolvedSynthesizer = SynthesisActor { id in
+            let local = SynthesisActor { id in
                 await manager.installedURL(for: id)
             }
+            let remote = OpenAICompatibleSpeechSynthesizer(
+                apiKeyProvider: {
+                    try await remoteTTSAPIKeyStore.token()
+                }
+            )
+            let routing = RoutingSpeechSynthesizer(local: local, remote: remote)
+            resolvedSynthesizer = routing
+            resolvedRouting = routing
         }
         self.synthesizer = resolvedSynthesizer
+        self.routingSynthesizer = resolvedRouting
         audioArchive = AudioArchive(directory: directories.historyAudio)
         voiceAudioArchive = AudioArchive(directory: directories.voiceDrafts)
         diagnostics = DiagnosticRecorder(
@@ -135,13 +150,18 @@ public final class SayItBackendService: SayItService {
         restoreJobJournal()
         applyPlaybackSettings(settingsStore.value)
         let initialSettings = settingsStore.value
-        Task { [synthesizer = resolvedSynthesizer, textCleaner] in
+        Task { [synthesizer = resolvedSynthesizer, routing = resolvedRouting, textCleaner] in
             await synthesizer.updateConfiguration(
                 chunkTarget: initialSettings.chunkCharacterTarget,
                 chunkDelay: initialSettings.chunkDelaySeconds,
                 paragraphPause: initialSettings.paragraphPauseSeconds,
                 idleUnloadDelay: initialSettings.modelUnloadDelaySeconds
             )
+            if let routing {
+                await routing.updateRemoteConfiguration(
+                    Self.remoteTTSConfiguration(from: initialSettings)
+                )
+            }
             await textCleaner.update(
                 options: Self.textCleaningOptions(from: initialSettings)
             )
@@ -477,6 +497,9 @@ public final class SayItBackendService: SayItService {
         case .updateSettings(let settings):
             try await updateSettings(settings)
             return .accepted
+        case .setRemoteTTSAPIKey(let key):
+            try await setRemoteTTSAPIKey(key)
+            return .accepted
         case .tokens:
             return .tokens(try await apiTokenStore.list())
         case .createToken(let name, let scopes):
@@ -502,6 +525,13 @@ public final class SayItBackendService: SayItService {
     private func startVoiceDiscovery(
         _ request: VoiceDiscoveryRequest
     ) throws -> VoiceStudioSnapshot {
+        if settingsStore.value.remoteTTSEnabled {
+            throw ServiceFailure(
+                code: "remote_tts.voice_studio_unavailable",
+                message: "Disable remote TTS in Advanced settings before using Voice Studio."
+            )
+        }
+
         guard !modelSwitchIsPending else {
             throw ServiceFailure(
                 code: "model.switch_in_progress",
@@ -706,6 +736,13 @@ public final class SayItBackendService: SayItService {
     private func startVoiceClone(
         _ request: VoiceCloneRequest
     ) throws -> VoiceStudioSnapshot {
+        if settingsStore.value.remoteTTSEnabled {
+            throw ServiceFailure(
+                code: "remote_tts.voice_studio_unavailable",
+                message: "Disable remote TTS in Advanced settings before using Voice Studio."
+            )
+        }
+
         guard !modelSwitchIsPending else {
             throw ServiceFailure(
                 code: "model.switch_in_progress",
@@ -1577,45 +1614,73 @@ public final class SayItBackendService: SayItService {
                 message: "The requested speech model was not found."
             )
         }
-        guard installedModelIDs.contains(model.id) else {
-            throw ServiceFailure(
-                code: "model.not_installed",
-                message: "Install \(model.displayName) before speaking."
-            )
+        if !settings.remoteTTSEnabled {
+            guard installedModelIDs.contains(model.id) else {
+                throw ServiceFailure(
+                    code: "model.not_installed",
+                    message: "Install \(model.displayName) before speaking."
+                )
+            }
+        } else {
+            try validateRemoteTTSSettings(settings)
         }
 
         let pace = closestSpeakingPace(
             to: submission.speakingPace ?? settings.speakingPace
         )
-        let resolvedVoice = try resolveVoice(
-            submission: submission,
-            settings: settings,
-            model: model
-        )
-        let voiceDescription = model.capabilities.voiceDescription
-            ? resolvedVoice.preset
-                ?? submission.voiceDescription
-                ?? nonEmpty(settings.voiceDescription)
-            : submission.voiceDescription
-                ?? nonEmpty(settings.voiceDescription)
-        let request = SpeechRequest(
-            id: id,
-            cleanedText: cleaned,
-            model: model,
-            voice: resolvedVoice.preset,
-            language: submission.language
-                ?? model.inferredLanguage(forPresetVoice: resolvedVoice.preset)
-                ?? nonEmpty(settings.activeLanguage)
-                ?? model.defaultLanguage,
-            voiceDescription: voiceDescription,
-            voiceMode: resolvedVoice.mode,
-            voiceReference: resolvedVoice.reference,
-            voiceProfileID: resolvedVoice.profileID,
-            voiceProfileName: resolvedVoice.profileName,
-            voiceTuning: resolvedVoice.tuning,
-            speakingPace: model.supportsNativeSpeakingPace ? pace : .natural,
-            source: submission.source.triggerSource
-        )
+        let request: SpeechRequest
+        if settings.remoteTTSEnabled {
+            let remoteVoice = nonEmpty(settings.remoteTTSVoice)
+                ?? submission.voice.flatMap(nonEmpty)
+            request = SpeechRequest(
+                id: id,
+                cleanedText: cleaned,
+                model: model,
+                voice: remoteVoice,
+                language: submission.language
+                    ?? nonEmpty(settings.activeLanguage)
+                    ?? model.defaultLanguage,
+                voiceDescription: submission.voiceDescription
+                    ?? nonEmpty(settings.voiceDescription),
+                voiceMode: .standard,
+                voiceReference: nil,
+                voiceProfileID: nil,
+                voiceProfileName: remoteVoice,
+                voiceTuning: nil,
+                speakingPace: .natural,
+                source: submission.source.triggerSource
+            )
+        } else {
+            let resolvedVoice = try resolveVoice(
+                submission: submission,
+                settings: settings,
+                model: model
+            )
+            let voiceDescription = model.capabilities.voiceDescription
+                ? resolvedVoice.preset
+                    ?? submission.voiceDescription
+                    ?? nonEmpty(settings.voiceDescription)
+                : submission.voiceDescription
+                    ?? nonEmpty(settings.voiceDescription)
+            request = SpeechRequest(
+                id: id,
+                cleanedText: cleaned,
+                model: model,
+                voice: resolvedVoice.preset,
+                language: submission.language
+                    ?? model.inferredLanguage(forPresetVoice: resolvedVoice.preset)
+                    ?? nonEmpty(settings.activeLanguage)
+                    ?? model.defaultLanguage,
+                voiceDescription: voiceDescription,
+                voiceMode: resolvedVoice.mode,
+                voiceReference: resolvedVoice.reference,
+                voiceProfileID: resolvedVoice.profileID,
+                voiceProfileName: resolvedVoice.profileName,
+                voiceTuning: resolvedVoice.tuning,
+                speakingPace: model.supportsNativeSpeakingPace ? pace : .natural,
+                source: submission.source.triggerSource
+            )
+        }
         activeRequest = request
         if submission.source != .preview {
             try history.begin(request)
@@ -2759,12 +2824,14 @@ public final class SayItBackendService: SayItService {
             )
         }
         if settings.activeModelID != previousModelID,
-           !installedModelIDs.contains(requestedModelID) {
+           !installedModelIDs.contains(requestedModelID),
+           !settings.remoteTTSEnabled {
             throw ServiceFailure(
                 code: "model.not_installed",
                 message: "Install the model before selecting it."
             )
         }
+        try validateRemoteTTSSettings(settings)
         guard SpeakingPace(rawValue: settings.speakingPace) != nil else {
             throw ServiceFailure(
                 code: "settings.invalid_speaking_pace",
@@ -2822,11 +2889,66 @@ public final class SayItBackendService: SayItService {
             paragraphPause: settings.paragraphPauseSeconds,
             idleUnloadDelay: settings.modelUnloadDelaySeconds
         )
+        if let routingSynthesizer {
+            await routingSynthesizer.updateRemoteConfiguration(
+                Self.remoteTTSConfiguration(from: settings)
+            )
+        }
         await textCleaner.update(
             options: Self.textCleaningOptions(from: settings)
         )
         enforceRetention()
         revision &+= 1
+    }
+
+    private func setRemoteTTSAPIKey(_ key: String?) async throws {
+        let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            try await remoteTTSAPIKeyStore.save(trimmed)
+        } else {
+            try await remoteTTSAPIKeyStore.remove()
+        }
+        revision &+= 1
+    }
+
+    private func validateRemoteTTSSettings(
+        _ settings: BackendSettingsSnapshot
+    ) throws {
+        guard settings.remoteTTSEnabled else { return }
+        guard RemoteTTSConfiguration.parseBaseURL(settings.remoteTTSBaseURL) != nil else {
+            throw ServiceFailure(
+                code: "settings.invalid_remote_tts_url",
+                message: "Enter a valid http(s) base URL for remote TTS."
+            )
+        }
+        let model = settings.remoteTTSModel
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else {
+            throw ServiceFailure(
+                code: "settings.invalid_remote_tts_model",
+                message: "Enter the remote model id expected by your endpoint."
+            )
+        }
+        guard (5...600).contains(settings.remoteTTSTimeoutSeconds) else {
+            throw ServiceFailure(
+                code: "settings.invalid_remote_tts_timeout",
+                message: "Remote TTS timeout must be between 5 and 600 seconds."
+            )
+        }
+    }
+
+    private static func remoteTTSConfiguration(
+        from settings: BackendSettingsSnapshot
+    ) -> RemoteTTSConfiguration {
+        RemoteTTSConfiguration(
+            enabled: settings.remoteTTSEnabled,
+            baseURL: RemoteTTSConfiguration.parseBaseURL(settings.remoteTTSBaseURL),
+            model: settings.remoteTTSModel
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            voice: settings.remoteTTSVoice
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            timeoutSeconds: settings.remoteTTSTimeoutSeconds
+        )
     }
 
     private func waitForPendingModelTransitions() async {

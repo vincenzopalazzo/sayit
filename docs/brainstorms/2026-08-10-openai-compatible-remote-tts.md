@@ -1,12 +1,12 @@
 # Clarified Problem Statement
 
-**Goal:** Let users opt into an Advanced mode that sends synthesis to an OpenAI-compatible TTS HTTP endpoint on another machine (e.g. NVIDIA Spark / any GPU PC), while the Mac app keeps selection, playback, history, and UI local.
+**Goal:** Let users opt into an Advanced mode that sends synthesis to an OpenAI-compatible TTS HTTP endpoint on another machine (e.g. any GPU PC on the LAN or tailnet), while the Mac app keeps selection, playback, history, and UI local.
 
 **Context (repo + user):**
 - Today synthesis is MLX-only via `SynthesisActor` (`BackendSpeechSynthesizing` / `SpeechSynthesizing`) constructed in `SayItBackendService`.
 - Optional HTTP API is **server-side and loopback-only** (`SayItHTTP` → `127.0.0.1`); it is not a remote client.
 - Product promise (`README` / `SECURITY.md`): local-by-default, no cloud inference unless the user clearly opts in.
-- User Spark host (personal reference only, not hardcoded): `vincenzo@spark-8c33.tail48e96f.ts.net` over Tailscale; recent workload there is LLM chat (`:8000`), not TTS. Feature should be **generic OpenAI-compatible**, not Spark-specific SSH.
+- Feature should be **generic OpenAI-compatible**, not Spark-specific SSH.
 
 **Constraints:**
 - Default remains fully local MLX; remote is explicit opt-in.
@@ -69,7 +69,7 @@ Suggested v1 shape:
 - Whether remote mode should hide local model download requirements in onboarding when enabled.
 - Streaming vs full-file response for long texts (latency vs complexity).
 - Should the existing loopback automation API ever proxy to remote, or only interactive app/CLI synthesis?
-- Default Tailscale URL is user-specific—never ship as a default; placeholders only.
+- Never ship a machine-specific default URL; placeholders only.
 
 ## Next
 

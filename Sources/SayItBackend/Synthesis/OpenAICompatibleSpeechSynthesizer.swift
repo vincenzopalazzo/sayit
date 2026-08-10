@@ -112,7 +112,7 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         try checkOperation(operationID)
         try validateConfiguration()
 
-        let modelName = nonEmpty(configuration.model) ?? request.model.id.rawValue
+        let modelName = try requiredModelName()
         let modelID = ModelID(modelName)
         continuation.yield(.loadingModel(modelID))
         continuation.yield(.modelLoaded(modelID))
@@ -236,6 +236,15 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         continuation.yield(.completed)
     }
 
+    private func requiredModelName() throws -> String {
+        guard let model = nonEmpty(configuration.model) else {
+            throw SynthesisError.remoteTTSInvalidConfiguration(
+                "Enter the remote model id expected by your endpoint."
+            )
+        }
+        return model
+    }
+
     private func validateConfiguration() throws {
         guard configuration.enabled else {
             throw SynthesisError.remoteTTSInvalidConfiguration(
@@ -244,14 +253,10 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
         }
         guard configuration.baseURL != nil else {
             throw SynthesisError.remoteTTSInvalidConfiguration(
-                "Enter a valid http(s) base URL for the OpenAI-compatible endpoint."
+                "Enter a valid https:// URL, or http:// only for local-network hosts."
             )
         }
-        guard nonEmpty(configuration.model) != nil else {
-            throw SynthesisError.remoteTTSInvalidConfiguration(
-                "Enter the remote model id expected by your endpoint."
-            )
-        }
+        _ = try requiredModelName()
     }
 
     private func beginOperation() -> UInt64 {

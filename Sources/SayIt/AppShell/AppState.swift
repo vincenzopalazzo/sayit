@@ -62,6 +62,8 @@ final class AppState {
     private(set) var remoteTTSAPIKeyMessage: String?
     @ObservationIgnored
     private var remoteTTSSettingsGeneration: UInt64 = 0
+    @ObservationIgnored
+    private var remoteTTSAPIKeyGeneration: UInt64 = 0
     private(set) var apiTokenErrorMessage: String?
     private(set) var oneTimeTokenSecret: String?
     private(set) var updateStatus = "Not checked yet"
@@ -957,16 +959,20 @@ final class AppState {
         remoteTTSAPIKeyMessage = nil
         remoteTTSErrorMessage = nil
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        remoteTTSAPIKeyGeneration &+= 1
+        let generation = remoteTTSAPIKeyGeneration
         Task {
             do {
                 let response = try await send(
                     .setRemoteTTSAPIKey(trimmed.isEmpty ? nil : trimmed)
                 )
                 try requireSuccess(response)
+                guard generation == remoteTTSAPIKeyGeneration else { return }
                 remoteTTSAPIKeyMessage = trimmed.isEmpty
                     ? "API key cleared."
                     : "API key saved in the Keychain."
             } catch {
+                guard generation == remoteTTSAPIKeyGeneration else { return }
                 remoteTTSErrorMessage = error.localizedDescription
             }
         }

@@ -9,16 +9,20 @@ struct AdvancedSettingsView: View {
     @State private var voice = ""
     @State private var timeoutSeconds = 120.0
     @State private var apiKey = ""
-    @State private var isDirty = false
-    @State private var isSynchronizing = false
+
+    private var isDirty: Bool {
+        let settings = state.backendSettings
+        return remoteTTSEnabled != settings.remoteTTSEnabled
+            || baseURL != settings.remoteTTSBaseURL
+            || model != settings.remoteTTSModel
+            || voice != settings.remoteTTSVoice
+            || timeoutSeconds != settings.remoteTTSTimeoutSeconds
+    }
 
     var body: some View {
         Form {
             Section {
                 Toggle("Use remote OpenAI-compatible TTS", isOn: $remoteTTSEnabled)
-                    .onChange(of: remoteTTSEnabled) { _, _ in
-                        markDirty()
-                    }
 
                 TextField(
                     "Base URL",
@@ -27,23 +31,14 @@ struct AdvancedSettingsView: View {
                 )
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
-                .onChange(of: baseURL) { _, _ in
-                    markDirty()
-                }
 
                 TextField("Model id", text: $model, prompt: Text("tts-1"))
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
-                    .onChange(of: model) { _, _ in
-                        markDirty()
-                    }
 
                 TextField("Voice id", text: $voice, prompt: Text("alloy"))
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
-                    .onChange(of: voice) { _, _ in
-                        markDirty()
-                    }
 
                 LabeledContent("Timeout") {
                     HStack {
@@ -52,9 +47,6 @@ struct AdvancedSettingsView: View {
                             .monospacedDigit()
                             .frame(width: 48, alignment: .trailing)
                     }
-                }
-                .onChange(of: timeoutSeconds) { _, _ in
-                    markDirty()
                 }
 
                 if let message = state.remoteTTSErrorMessage {
@@ -116,21 +108,13 @@ struct AdvancedSettingsView: View {
         .onAppear(perform: synchronize)
     }
 
-    private func markDirty() {
-        guard !isSynchronizing else { return }
-        isDirty = true
-    }
-
     private func synchronize() {
-        isSynchronizing = true
         let settings = state.backendSettings
         remoteTTSEnabled = settings.remoteTTSEnabled
         baseURL = settings.remoteTTSBaseURL
         model = settings.remoteTTSModel
         voice = settings.remoteTTSVoice
         timeoutSeconds = settings.remoteTTSTimeoutSeconds
-        isDirty = false
-        isSynchronizing = false
     }
 
     private func persistSettings() {
@@ -141,6 +125,5 @@ struct AdvancedSettingsView: View {
             voice: voice,
             timeoutSeconds: timeoutSeconds
         )
-        isDirty = false
     }
 }

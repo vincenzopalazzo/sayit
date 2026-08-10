@@ -1647,7 +1647,7 @@ public final class SayItBackendService: SayItService {
                 voiceProfileID: nil,
                 voiceProfileName: remoteVoice,
                 voiceTuning: nil,
-                speakingPace: .natural,
+                speakingPace: pace,
                 source: submission.source.triggerSource
             )
         } else {
@@ -2932,7 +2932,8 @@ public final class SayItBackendService: SayItService {
                 message: "Enter the remote model id expected by your endpoint."
             )
         }
-        guard (5...600).contains(settings.remoteTTSTimeoutSeconds) else {
+        guard settings.remoteTTSTimeoutSeconds.isFinite,
+              (5...600).contains(settings.remoteTTSTimeoutSeconds) else {
             throw ServiceFailure(
                 code: "settings.invalid_remote_tts_timeout",
                 message: "Remote TTS timeout must be between 5 and 600 seconds."

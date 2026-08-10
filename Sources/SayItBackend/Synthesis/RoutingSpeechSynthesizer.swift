@@ -6,6 +6,7 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     private let local: any BackendSpeechSynthesizing
     private let remote: OpenAICompatibleSpeechSynthesizer
     private var remoteEnabled = false
+    private var configurationGeneration: UInt64 = 0
 
     init(
         local: any BackendSpeechSynthesizing,
@@ -16,14 +17,19 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     }
 
     func updateRemoteConfiguration(_ configuration: RemoteTTSConfiguration) async {
+        configurationGeneration &+= 1
+        let generation = configurationGeneration
+
         if configuration.enabled {
             // Apply remote settings before advertising the remote route so a
             // re-entrant synthesize call cannot observe enabled+stale config.
             await remote.updateRemoteConfiguration(configuration)
+            guard generation == configurationGeneration else { return }
             remoteEnabled = true
         } else {
             remoteEnabled = false
             await remote.updateRemoteConfiguration(configuration)
+            guard generation == configurationGeneration else { return }
         }
     }
 

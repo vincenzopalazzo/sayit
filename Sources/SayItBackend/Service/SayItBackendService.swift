@@ -150,18 +150,13 @@ public final class SayItBackendService: SayItService {
         restoreJobJournal()
         applyPlaybackSettings(settingsStore.value)
         let initialSettings = settingsStore.value
-        Task { [synthesizer = resolvedSynthesizer, routing = resolvedRouting, textCleaner, settingsStore] in
+        Task { [synthesizer = resolvedSynthesizer, textCleaner] in
             await synthesizer.updateConfiguration(
                 chunkTarget: initialSettings.chunkCharacterTarget,
                 chunkDelay: initialSettings.chunkDelaySeconds,
                 paragraphPause: initialSettings.paragraphPauseSeconds,
                 idleUnloadDelay: initialSettings.modelUnloadDelaySeconds
             )
-            if let routing {
-                await routing.updateRemoteConfiguration(
-                    Self.remoteTTSConfiguration(from: settingsStore.value)
-                )
-            }
             await textCleaner.update(
                 options: Self.textCleaningOptions(from: initialSettings)
             )
@@ -172,6 +167,11 @@ public final class SayItBackendService: SayItService {
     }
 
     public func start() async {
+        if let routingSynthesizer {
+            await routingSynthesizer.updateRemoteConfiguration(
+                Self.remoteTTSConfiguration(from: settingsStore.value)
+            )
+        }
         installedModelIDs = await modelManager.installedModelIDs()
         models = await modelManager.models()
         if !installedModelIDs.contains(ModelID(settingsStore.value.activeModelID)),

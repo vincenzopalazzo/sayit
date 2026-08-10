@@ -6,7 +6,8 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     private let local: any BackendSpeechSynthesizing
     private let remote: OpenAICompatibleSpeechSynthesizer
     private var remoteEnabled = false
-    private var configurationGeneration: UInt64 = 0
+    /// Serializes configuration updates so remote settings cannot apply out of order.
+    private var configurationChain: Task<Void, Never> = Task {}
 
     init(
         local: any BackendSpeechSynthesizing,
@@ -17,19 +18,16 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     }
 
     func updateRemoteConfiguration(_ configuration: RemoteTTSConfiguration) async {
-        configurationGeneration &+= 1
-        let generation = configurationGeneration
-
-        if configuration.enabled {
-            // Apply remote settings before advertising the remote route so a
-            // re-entrant synthesize call cannot observe enabled+stale config.
+        let previous = configurationChain
+        let task = Task { [remote] in
+            await previous.value
             await remote.updateRemoteConfiguration(configuration)
-            guard generation == configurationGeneration else { return }
-            remoteEnabled = true
-        } else {
-            remoteEnabled = false
-            await remote.updateRemoteConfiguration(configuration)
-            guard generation == configurationGeneration else { return }
+        }
+        configurationChain = task
+        await task.value
+        // Only the latest completed chain head may publish routing state.
+        if configurationChain == task {
+            remoteEnabled = configuration.enabled
         }
     }
 
@@ -54,6 +52,7 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     }
 
     func prepareDependencies(for model: ModelDescriptor) async throws {
+        await configurationChain.value
         if remoteEnabled {
             try await remote.prepareDependencies(for: model)
         } else {
@@ -64,6 +63,7 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
     func synthesize(
         _ request: SpeechRequest
     ) async -> AsyncThrowingStream<SynthesisEvent, Error> {
+        await configurationChain.value
         if remoteEnabled {
             return await remote.synthesize(request)
         }
@@ -88,6 +88,7 @@ actor RoutingSpeechSynthesizer: BackendSpeechSynthesizing {
         seed: UInt64,
         reference: VoiceReference?
     ) async throws -> GeneratedVoiceSample {
+        await configurationChain.value
         if remoteEnabled {
             return try await remote.generateVoiceSample(
                 model: model,

@@ -13,7 +13,7 @@
 - UI must make privacy leave-local obvious (text leaves the Mac).
 - Playback, hotkeys, history, and menu-bar player stay on the Mac.
 - Auth via bearer token (and optionally custom headers); base URL configurable.
-- Prefer HTTPS; allow http:// only for local-network hosts.
+- Prefer HTTPS for any non-local endpoint; allow http:// only for verified local-network IPs/hosts (loopback, RFC1918, .local, .ts.net).
 - Compatible with common OpenAI-style TTS APIs (`POST /v1/audio/speech` with `model`, `voice`, `input`, audio bytes back)—exact dialect may vary; document assumptions.
 - No credentials in git; store secrets in Keychain (or equivalent), not plain `Backend Settings.json` if possible.
 - Do not break XPC app/CLI path or existing loopback automation API.
@@ -65,6 +65,8 @@ Suggested v1 shape:
 - Out of v1: SSH tunnels as first-class UI, remote voice cloning, streaming PCM if not widely supported (buffer full response is OK initially).
 
 ## Open questions
+
+- Whether bearer tokens should require HTTPS even on local-network hosts (currently http is allowed on LAN for self-hosted boxes).
 
 - Exact OpenAI TTS dialect to target first (official OpenAI `/v1/audio/speech` vs common self-hosted clones: Speaches, OpenAudio, custom FastAPI wrappers)—may need one “compatibility profile” or configurable path.
 - Whether remote mode should hide local model download requirements in onboarding when enabled.

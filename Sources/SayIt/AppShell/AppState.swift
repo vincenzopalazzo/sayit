@@ -937,9 +937,9 @@ final class AppState {
         snapshot.remoteTTSModel = model
         snapshot.remoteTTSVoice = voice
         snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
-        remoteTTSErrorMessage = nil
         enqueueRemoteTTSSettingsWork { [weak self] in
             guard let self else { return }
+            self.remoteTTSErrorMessage = nil
             do {
                 let response = try await self.send(.updateSettings(snapshot))
                 try self.requireSuccess(response)
@@ -951,11 +951,11 @@ final class AppState {
     }
 
     func setRemoteTTSAPIKey(_ key: String) {
-        remoteTTSAPIKeyMessage = nil
-        remoteTTSErrorMessage = nil
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         enqueueRemoteTTSSettingsWork { [weak self] in
             guard let self else { return }
+            self.remoteTTSAPIKeyMessage = nil
+            self.remoteTTSErrorMessage = nil
             do {
                 let response = try await self.send(
                     .setRemoteTTSAPIKey(trimmed.isEmpty ? nil : trimmed)

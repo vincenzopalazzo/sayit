@@ -9,30 +9,40 @@ struct AdvancedSettingsView: View {
     @State private var voice = ""
     @State private var timeoutSeconds = 120.0
     @State private var apiKey = ""
-    @State private var isSaving = false
+    @State private var isDirty = false
 
     var body: some View {
         Form {
             Section {
                 Toggle("Use remote OpenAI-compatible TTS", isOn: $remoteTTSEnabled)
                     .onChange(of: remoteTTSEnabled) { _, _ in
-                        persistSettings()
+                        isDirty = true
                     }
 
-                TextField("Base URL", text: $baseURL, prompt: Text("https://host:port/v1"))
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
-                    .onSubmit(persistSettings)
+                TextField(
+                    "Base URL",
+                    text: $baseURL,
+                    prompt: Text("https://host:port/v1")
+                )
+                .textFieldStyle(.roundedBorder)
+                .disableAutocorrection(true)
+                .onChange(of: baseURL) { _, _ in
+                    isDirty = true
+                }
 
                 TextField("Model id", text: $model, prompt: Text("tts-1"))
                     .textFieldStyle(.roundedBorder)
                     .disableAutocorrection(true)
-                    .onSubmit(persistSettings)
+                    .onChange(of: model) { _, _ in
+                        isDirty = true
+                    }
 
                 TextField("Voice id", text: $voice, prompt: Text("alloy"))
                     .textFieldStyle(.roundedBorder)
                     .disableAutocorrection(true)
-                    .onSubmit(persistSettings)
+                    .onChange(of: voice) { _, _ in
+                        isDirty = true
+                    }
 
                 LabeledContent("Timeout") {
                     HStack {
@@ -43,7 +53,7 @@ struct AdvancedSettingsView: View {
                     }
                 }
                 .onChange(of: timeoutSeconds) { _, _ in
-                    persistSettings()
+                    isDirty = true
                 }
 
                 if let message = state.remoteTTSErrorMessage {
@@ -55,26 +65,29 @@ struct AdvancedSettingsView: View {
                 Text("Remote TTS")
             } footer: {
                 Text(
-                    "Optional. When enabled, Say It sends text you choose to speak to the configured endpoint and plays the returned audio on this Mac. Your text leaves this computer. Local MLX synthesis remains the default when this is off."
+                    "Optional. When enabled, Say It sends text you choose to speak to the configured endpoint and plays the returned audio on this Mac. Your text leaves this computer. Local MLX synthesis remains the default when this is off. Prefer https:// endpoints when possible."
                 )
             }
 
             Section {
-                SecureField("API key", text: $apiKey, prompt: Text("Optional bearer token"))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(saveAPIKey)
+                SecureField(
+                    "API key",
+                    text: $apiKey,
+                    prompt: Text("Optional bearer token")
+                )
+                .textFieldStyle(.roundedBorder)
 
                 HStack {
                     Button("Save API Key") {
-                        saveAPIKey()
+                        state.setRemoteTTSAPIKey(apiKey)
+                        apiKey = ""
                     }
-                    .disabled(isSaving)
+                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     Button("Clear API Key", role: .destructive) {
                         apiKey = ""
                         state.clearRemoteTTSAPIKey()
                     }
-                    .disabled(isSaving)
                 }
 
                 if let message = state.remoteTTSAPIKeyMessage {
@@ -94,14 +107,12 @@ struct AdvancedSettingsView: View {
                 Button("Apply Settings") {
                     persistSettings()
                 }
-                .disabled(isSaving)
+                .disabled(!isDirty)
+                .keyboardShortcut(.defaultAction)
             }
         }
         .formStyle(.grouped)
         .onAppear(perform: synchronize)
-        .onChange(of: state.backendSettings) { _, _ in
-            synchronize()
-        }
     }
 
     private func synchronize() {
@@ -111,10 +122,10 @@ struct AdvancedSettingsView: View {
         model = settings.remoteTTSModel
         voice = settings.remoteTTSVoice
         timeoutSeconds = settings.remoteTTSTimeoutSeconds
+        isDirty = false
     }
 
     private func persistSettings() {
-        isSaving = true
         state.updateRemoteTTS(
             enabled: remoteTTSEnabled,
             baseURL: baseURL,
@@ -122,12 +133,6 @@ struct AdvancedSettingsView: View {
             voice: voice,
             timeoutSeconds: timeoutSeconds
         )
-        isSaving = false
-    }
-
-    private func saveAPIKey() {
-        isSaving = true
-        state.setRemoteTTSAPIKey(apiKey)
-        isSaving = false
+        isDirty = false
     }
 }

@@ -122,15 +122,16 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
             throw SynthesisError.remoteTTSInvalidConfiguration("There is no text to speak.")
         }
 
-        let voice = nonEmpty(configuration.voice)
-            ?? nonEmpty(request.voice)
-            ?? "alloy"
+        let voice = nonEmpty(configuration.voice) ?? nonEmpty(request.voice)
 
         let endpoint = try configuration.speechEndpointURL()
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        urlRequest.setValue(
+            "audio/*, application/octet-stream",
+            forHTTPHeaderField: "Accept"
+        )
         urlRequest.timeoutInterval = max(5, configuration.timeoutSeconds)
 
         if let apiKey = try await apiKeyProvider(),
@@ -141,15 +142,16 @@ actor OpenAICompatibleSpeechSynthesizer: BackendSpeechSynthesizing {
             )
         }
 
-        // Prefer wav for reliable local decode; servers that only support mp3
-        // still usually return a decodable container.
-        let body: [String: Any] = [
+        // Prefer wav for reliable local decode. Servers that ignore this field
+        // and return mp3/other containers are still handled by the decoder.
+        var body: [String: Any] = [
             "model": modelName,
             "input": text,
-            "voice": voice,
-            "response_format": "wav",
-            "format": "wav"
+            "response_format": "wav"
         ]
+        if let voice {
+            body["voice"] = voice
+        }
         urlRequest.httpBody = try JSONSerialization.data(
             withJSONObject: body,
             options: []

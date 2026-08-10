@@ -69,6 +69,7 @@ struct OpenAICompatibleSpeechSynthesizerTests {
         #expect(body?["input"] as? String == "Hello from Say It")
         #expect(body?["voice"] as? String == "alloy")
         #expect(body?["response_format"] as? String == "wav")
+        #expect(body?.keys.contains("format") != true)
 
         #expect(events.contains { if case .completed = $0 { true } else { false } })
         let audioEvents = events.compactMap { event -> AudioChunk? in

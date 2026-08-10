@@ -30,11 +30,40 @@ struct RemoteTTSConfiguration: Equatable, Sendable {
         }
         guard let url = URL(string: candidate),
               let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              url.host != nil else {
+              let host = url.host?.lowercased(),
+              !host.isEmpty else {
             return nil
         }
-        return url
+        switch scheme {
+        case "https":
+            return url
+        case "http":
+            // Cleartext only for loopback / local-network style hosts.
+            guard isLocalNetworkHost(host) else { return nil }
+            return url
+        default:
+            return nil
+        }
+    }
+
+    static func isLocalNetworkHost(_ host: String) -> Bool {
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+            return true
+        }
+        if host.hasSuffix(".local") {
+            return true
+        }
+        // Tailscale MagicDNS and similar private mesh names.
+        if host.hasSuffix(".ts.net") {
+            return true
+        }
+        // RFC1918 IPv4 prefixes commonly used on LAN.
+        if host.hasPrefix("10.")
+            || host.hasPrefix("192.168.")
+            || host.range(of: #"^172\.(1[6-9]|2[0-9]|3[0-1])\."#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
     }
 
     func speechEndpointURL() throws -> URL {

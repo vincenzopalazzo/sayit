@@ -2921,7 +2921,7 @@ public final class SayItBackendService: SayItService {
         guard RemoteTTSConfiguration.parseBaseURL(settings.remoteTTSBaseURL) != nil else {
             throw ServiceFailure(
                 code: "settings.invalid_remote_tts_url",
-                message: "Enter a valid http(s) base URL for remote TTS."
+                message: "Enter a valid remote TTS URL. Use https://, or http:// only for local-network hosts."
             )
         }
         let model = settings.remoteTTSModel

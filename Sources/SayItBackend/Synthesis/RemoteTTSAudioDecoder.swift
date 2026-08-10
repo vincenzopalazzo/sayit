@@ -9,6 +9,8 @@ enum RemoteTTSAudioDecoder {
 
     /// Reject multi-hour remote payloads that would force huge buffers.
     private static let maximumFrameCount: AVAudioFrameCount = 24_000 * 60 * 30
+    private static let maximumChannelCount: AVAudioChannelCount = 8
+    private static let maximumTotalSamples = Int(maximumFrameCount) * Int(maximumChannelCount)
 
     static func decode(_ data: Data) throws -> DecodedPCM {
         guard !data.isEmpty else {
@@ -49,9 +51,14 @@ enum RemoteTTSAudioDecoder {
         defer { try? FileManager.default.removeItem(at: temporaryURL) }
         try data.write(to: temporaryURL, options: .atomic)
 
+        // Force a known non-interleaved float format so channel planes are safe.
         let file: AVAudioFile
         do {
-            file = try AVAudioFile(forReading: temporaryURL)
+            file = try AVAudioFile(
+                forReading: temporaryURL,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
         } catch {
             return nil
         }
@@ -67,6 +74,23 @@ enum RemoteTTSAudioDecoder {
                 "The remote audio is longer than the supported limit."
             )
         }
+        guard format.channelCount > 0,
+              format.channelCount <= maximumChannelCount else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio has an unsupported channel layout."
+            )
+        }
+        let totalSamples = Int(length) * Int(format.channelCount)
+        guard totalSamples <= maximumTotalSamples else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio is larger than the supported limit."
+            )
+        }
+        guard format.sampleRate > 0 else {
+            throw SynthesisError.remoteTTSInvalidAudio(
+                "The remote audio reported an invalid sample rate."
+            )
+        }
 
         let frameCount = AVAudioFrameCount(length)
         guard let buffer = AVAudioPCMBuffer(
@@ -79,60 +103,32 @@ enum RemoteTTSAudioDecoder {
         }
         try file.read(into: buffer)
 
-        let sampleRate = format.sampleRate
-        guard sampleRate > 0 else {
-            throw SynthesisError.remoteTTSInvalidAudio(
-                "The remote audio reported an invalid sample rate."
-            )
-        }
-        let channelCount = Int(format.channelCount)
-        guard channelCount > 0 else {
-            throw SynthesisError.remoteTTSInvalidAudio(
-                "The remote audio had no channels."
-            )
-        }
-
-        var samples: [Float] = []
-        samples.reserveCapacity(Int(buffer.frameLength))
-
-        if let channelData = buffer.floatChannelData {
-            let frames = Int(buffer.frameLength)
-            if channelCount == 1 {
-                samples.append(contentsOf: UnsafeBufferPointer(
-                    start: channelData[0],
-                    count: frames
-                ))
-            } else {
-                for frame in 0..<frames {
-                    var mixed: Float = 0
-                    for channel in 0..<channelCount {
-                        mixed += channelData[channel][frame]
-                    }
-                    samples.append(mixed / Float(channelCount))
-                }
-            }
-        } else if let int16Data = buffer.int16ChannelData {
-            let frames = Int(buffer.frameLength)
-            let scale: Float = 1.0 / Float(Int16.max)
-            if channelCount == 1 {
-                for frame in 0..<frames {
-                    samples.append(Float(int16Data[0][frame]) * scale)
-                }
-            } else {
-                for frame in 0..<frames {
-                    var mixed: Float = 0
-                    for channel in 0..<channelCount {
-                        mixed += Float(int16Data[channel][frame]) * scale
-                    }
-                    samples.append(mixed / Float(channelCount))
-                }
-            }
-        } else {
+        guard let channelData = buffer.floatChannelData else {
             throw SynthesisError.remoteTTSInvalidAudio(
                 "Unsupported remote audio sample format."
             )
         }
 
-        return DecodedPCM(samples: samples, sampleRate: sampleRate)
+        let frames = Int(buffer.frameLength)
+        let channelCount = Int(format.channelCount)
+        var samples: [Float] = []
+        samples.reserveCapacity(frames)
+
+        if channelCount == 1 {
+            samples.append(contentsOf: UnsafeBufferPointer(
+                start: channelData[0],
+                count: frames
+            ))
+        } else {
+            for frame in 0..<frames {
+                var mixed: Float = 0
+                for channel in 0..<channelCount {
+                    mixed += channelData[channel][frame]
+                }
+                samples.append(mixed / Float(channelCount))
+            }
+        }
+
+        return DecodedPCM(samples: samples, sampleRate: format.sampleRate)
     }
 }

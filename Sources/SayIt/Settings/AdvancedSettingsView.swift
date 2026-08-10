@@ -10,13 +10,14 @@ struct AdvancedSettingsView: View {
     @State private var timeoutSeconds = 120.0
     @State private var apiKey = ""
     @State private var isDirty = false
+    @State private var isSynchronizing = false
 
     var body: some View {
         Form {
             Section {
                 Toggle("Use remote OpenAI-compatible TTS", isOn: $remoteTTSEnabled)
                     .onChange(of: remoteTTSEnabled) { _, _ in
-                        isDirty = true
+                        markDirty()
                     }
 
                 TextField(
@@ -27,21 +28,21 @@ struct AdvancedSettingsView: View {
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
                 .onChange(of: baseURL) { _, _ in
-                    isDirty = true
+                    markDirty()
                 }
 
                 TextField("Model id", text: $model, prompt: Text("tts-1"))
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
                     .onChange(of: model) { _, _ in
-                        isDirty = true
+                        markDirty()
                     }
 
                 TextField("Voice id", text: $voice, prompt: Text("alloy"))
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
                     .onChange(of: voice) { _, _ in
-                        isDirty = true
+                        markDirty()
                     }
 
                 LabeledContent("Timeout") {
@@ -53,7 +54,7 @@ struct AdvancedSettingsView: View {
                     }
                 }
                 .onChange(of: timeoutSeconds) { _, _ in
-                    isDirty = true
+                    markDirty()
                 }
 
                 if let message = state.remoteTTSErrorMessage {
@@ -65,7 +66,7 @@ struct AdvancedSettingsView: View {
                 Text("Remote TTS")
             } footer: {
                 Text(
-                    "Optional. When enabled, Say It sends text you choose to speak to the configured endpoint and plays the returned audio on this Mac. Your text leaves this computer. Local MLX synthesis remains the default when this is off. Prefer https:// endpoints when possible."
+                    "Optional. When enabled, text you choose to speak is sent to the configured OpenAI-compatible endpoint, along with any API key, and the returned audio plays on this Mac. History stays on this Mac. Local MLX synthesis remains the default when this is off. Prefer https://; http:// is only for trusted local-network hosts."
                 )
             }
 
@@ -115,7 +116,13 @@ struct AdvancedSettingsView: View {
         .onAppear(perform: synchronize)
     }
 
+    private func markDirty() {
+        guard !isSynchronizing else { return }
+        isDirty = true
+    }
+
     private func synchronize() {
+        isSynchronizing = true
         let settings = state.backendSettings
         remoteTTSEnabled = settings.remoteTTSEnabled
         baseURL = settings.remoteTTSBaseURL
@@ -123,6 +130,7 @@ struct AdvancedSettingsView: View {
         voice = settings.remoteTTSVoice
         timeoutSeconds = settings.remoteTTSTimeoutSeconds
         isDirty = false
+        isSynchronizing = false
     }
 
     private func persistSettings() {

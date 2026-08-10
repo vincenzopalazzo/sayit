@@ -14,6 +14,13 @@ struct RemoteTTSConfigurationTests {
             RemoteTTSConfiguration.parseBaseURL("http://127.0.0.1:8080/")?
                 .absoluteString == "http://127.0.0.1:8080"
         )
+        #expect(
+            RemoteTTSConfiguration.parseBaseURL("http://192.168.1.10:8080/v1")?
+                .absoluteString == "http://192.168.1.10:8080/v1"
+        )
+        #expect(
+            RemoteTTSConfiguration.parseBaseURL("http://example.com/v1") == nil
+        )
         #expect(RemoteTTSConfiguration.parseBaseURL("") == nil)
         #expect(RemoteTTSConfiguration.parseBaseURL("ftp://nope") == nil)
         #expect(RemoteTTSConfiguration.parseBaseURL("not a url") == nil)

@@ -82,10 +82,10 @@ owns model downloads, synthesis, playback, and history. The app and CLI talk to
 that service over XPC. A narrowly scoped accessibility helper retrieves the
 frontmost app's selection only when requested. An optional, token-protected HTTP
 server exposes the same synthesis engine to other local apps through a
-versioned REST API bound to `127.0.0.1`. Advanced settings can instead point
-synthesis at a user-configured OpenAI-compatible TTS endpoint on another
-machine; playback and history stay on the Mac, and local MLX remains the
-default when that option is off.
+versioned REST API bound to `127.0.0.1`. Advanced settings can instead send text you choose to speak to a
+user-configured OpenAI-compatible TTS endpoint on another machine; returned
+audio plays on the Mac, history stays local, and local MLX remains the default
+when that option is off.
 
 The synthesis layer is built primarily on
 [MLX Audio](https://github.com/Blaizzy/mlx-audio), with the native Swift

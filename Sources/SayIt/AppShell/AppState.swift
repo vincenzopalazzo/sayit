@@ -935,12 +935,12 @@ final class AppState {
         snapshot.remoteTTSModel = model
         snapshot.remoteTTSVoice = voice
         snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
-        backendSettings = snapshot
         remoteTTSErrorMessage = nil
         Task {
             do {
                 let response = try await send(.updateSettings(snapshot))
                 try requireSuccess(response)
+                backendSettings = snapshot
             } catch {
                 remoteTTSErrorMessage = error.localizedDescription
             }

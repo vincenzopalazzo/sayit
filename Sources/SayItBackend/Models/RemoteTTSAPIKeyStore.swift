@@ -35,20 +35,32 @@ actor RemoteTTSAPIKeyStore {
         let attributes: [String: Any] = [
             kSecValueData as String: Data(token.utf8)
         ]
-        let updateStatus = SecItemUpdate(
-            base as CFDictionary,
-            attributes as CFDictionary
-        )
-        if updateStatus == errSecItemNotFound {
-            var add = base
-            add[kSecValueData as String] = Data(token.utf8)
-            let addStatus = SecItemAdd(add as CFDictionary, nil)
-            guard addStatus == errSecSuccess else {
+
+        // Upsert with a short retry so concurrent process creates do not fail
+        // the save after errSecItemNotFound races with another SecItemAdd.
+        for _ in 0..<3 {
+            let updateStatus = SecItemUpdate(
+                base as CFDictionary,
+                attributes as CFDictionary
+            )
+            if updateStatus == errSecSuccess {
+                return
+            }
+            if updateStatus == errSecItemNotFound {
+                var add = base
+                add[kSecValueData as String] = Data(token.utf8)
+                let addStatus = SecItemAdd(add as CFDictionary, nil)
+                if addStatus == errSecSuccess {
+                    return
+                }
+                if addStatus == errSecDuplicateItem {
+                    continue
+                }
                 throw CocoaError(.fileWriteUnknown)
             }
-        } else if updateStatus != errSecSuccess {
             throw CocoaError(.fileWriteUnknown)
         }
+        throw CocoaError(.fileWriteUnknown)
     }
 
     func remove() throws {

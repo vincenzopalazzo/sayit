@@ -61,9 +61,7 @@ final class AppState {
     private(set) var remoteTTSErrorMessage: String?
     private(set) var remoteTTSAPIKeyMessage: String?
     @ObservationIgnored
-    private var remoteTTSSettingsGeneration: UInt64 = 0
-    @ObservationIgnored
-    private var remoteTTSAPIKeyGeneration: UInt64 = 0
+    private var remoteTTSSettingsTask: Task<Void, Never>?
     private(set) var apiTokenErrorMessage: String?
     private(set) var oneTimeTokenSecret: String?
     private(set) var updateStatus = "Not checked yet"
@@ -940,17 +938,14 @@ final class AppState {
         snapshot.remoteTTSVoice = voice
         snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
         remoteTTSErrorMessage = nil
-        remoteTTSSettingsGeneration &+= 1
-        let generation = remoteTTSSettingsGeneration
-        Task {
+        enqueueRemoteTTSSettingsWork { [weak self] in
+            guard let self else { return }
             do {
-                let response = try await send(.updateSettings(snapshot))
-                try requireSuccess(response)
-                guard generation == remoteTTSSettingsGeneration else { return }
-                backendSettings = snapshot
+                let response = try await self.send(.updateSettings(snapshot))
+                try self.requireSuccess(response)
+                self.backendSettings = snapshot
             } catch {
-                guard generation == remoteTTSSettingsGeneration else { return }
-                remoteTTSErrorMessage = error.localizedDescription
+                self.remoteTTSErrorMessage = error.localizedDescription
             }
         }
     }
@@ -959,22 +954,30 @@ final class AppState {
         remoteTTSAPIKeyMessage = nil
         remoteTTSErrorMessage = nil
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        remoteTTSAPIKeyGeneration &+= 1
-        let generation = remoteTTSAPIKeyGeneration
-        Task {
+        enqueueRemoteTTSSettingsWork { [weak self] in
+            guard let self else { return }
             do {
-                let response = try await send(
+                let response = try await self.send(
                     .setRemoteTTSAPIKey(trimmed.isEmpty ? nil : trimmed)
                 )
-                try requireSuccess(response)
-                guard generation == remoteTTSAPIKeyGeneration else { return }
-                remoteTTSAPIKeyMessage = trimmed.isEmpty
+                try self.requireSuccess(response)
+                self.remoteTTSAPIKeyMessage = trimmed.isEmpty
                     ? "API key cleared."
                     : "API key saved in the Keychain."
             } catch {
-                guard generation == remoteTTSAPIKeyGeneration else { return }
-                remoteTTSErrorMessage = error.localizedDescription
+                self.remoteTTSErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func enqueueRemoteTTSSettingsWork(
+        _ operation: @escaping @MainActor () async -> Void
+    ) {
+        let previous = remoteTTSSettingsTask
+        remoteTTSSettingsTask = Task { @MainActor in
+            _ = await previous?.value
+            guard !Task.isCancelled else { return }
+            await operation()
         }
     }
 

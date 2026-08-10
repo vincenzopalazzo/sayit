@@ -13,6 +13,7 @@
 - UI must make privacy leave-local obvious (text leaves the Mac).
 - Playback, hotkeys, history, and menu-bar player stay on the Mac.
 - Auth via bearer token (and optionally custom headers); base URL configurable.
+- Prefer HTTPS; allow http:// only for local-network hosts.
 - Compatible with common OpenAI-style TTS APIs (`POST /v1/audio/speech` with `model`, `voice`, `input`, audio bytes back)—exact dialect may vary; document assumptions.
 - No credentials in git; store secrets in Keychain (or equivalent), not plain `Backend Settings.json` if possible.
 - Do not break XPC app/CLI path or existing loopback automation API.

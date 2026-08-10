@@ -150,7 +150,7 @@ public final class SayItBackendService: SayItService {
         restoreJobJournal()
         applyPlaybackSettings(settingsStore.value)
         let initialSettings = settingsStore.value
-        Task { [synthesizer = resolvedSynthesizer, routing = resolvedRouting, textCleaner] in
+        Task { [synthesizer = resolvedSynthesizer, routing = resolvedRouting, textCleaner, settingsStore] in
             await synthesizer.updateConfiguration(
                 chunkTarget: initialSettings.chunkCharacterTarget,
                 chunkDelay: initialSettings.chunkDelaySeconds,
@@ -159,7 +159,7 @@ public final class SayItBackendService: SayItService {
             )
             if let routing {
                 await routing.updateRemoteConfiguration(
-                    Self.remoteTTSConfiguration(from: initialSettings)
+                    Self.remoteTTSConfiguration(from: settingsStore.value)
                 )
             }
             await textCleaner.update(

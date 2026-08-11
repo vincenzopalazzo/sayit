@@ -398,7 +398,12 @@ final class AppSettings {
 
     func backendSnapshot(
         httpEnabled: Bool = false,
-        httpPort: Int = 59_125
+        httpPort: Int = 59_125,
+        remoteTTSEnabled: Bool = false,
+        remoteTTSBaseURL: String = "",
+        remoteTTSModel: String = "",
+        remoteTTSVoice: String = "",
+        remoteTTSTimeoutSeconds: Double = 120
     ) -> BackendSettingsSnapshot {
         BackendSettingsSnapshot(
             activeModelID: activeModelID.rawValue,
@@ -416,6 +421,11 @@ final class AppSettings {
             historyQuotaBytes: historyQuotaBytes,
             httpEnabled: httpEnabled,
             httpPort: httpPort,
+            remoteTTSEnabled: remoteTTSEnabled,
+            remoteTTSBaseURL: remoteTTSBaseURL,
+            remoteTTSModel: remoteTTSModel,
+            remoteTTSVoice: remoteTTSVoice,
+            remoteTTSTimeoutSeconds: remoteTTSTimeoutSeconds,
             chunkCharacterTarget: chunkCharacterTarget,
             chunkDelaySeconds: chunkDelaySeconds,
             paragraphPauseSeconds: paragraphPauseSeconds,

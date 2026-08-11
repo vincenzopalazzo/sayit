@@ -7,6 +7,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case voices
     case models
     case history
+    case advanced
     case diagnostics
     case about
 
@@ -20,6 +21,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .voices: "Voices"
         case .models: "Models"
         case .history: "History"
+        case .advanced: "Advanced"
         case .diagnostics: "Diagnostics"
         case .about: "About"
         }
@@ -33,6 +35,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .voices: "person.wave.2"
         case .models: "internaldrive"
         case .history: "clock.arrow.circlepath"
+        case .advanced: "slider.horizontal.3"
         case .diagnostics: "stethoscope"
         case .about: "info.circle"
         }

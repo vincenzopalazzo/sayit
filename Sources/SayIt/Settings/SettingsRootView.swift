@@ -50,6 +50,13 @@ struct SettingsRootView: View {
                 HistorySettingsView(settings: settings)
             }
             Tab(
+                SettingsPane.advanced.title,
+                systemImage: SettingsPane.advanced.symbol,
+                value: SettingsPane.advanced
+            ) {
+                AdvancedSettingsView()
+            }
+            Tab(
                 SettingsPane.diagnostics.title,
                 systemImage: SettingsPane.diagnostics.symbol,
                 value: SettingsPane.diagnostics

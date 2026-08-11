@@ -1,8 +1,10 @@
 # Security and Privacy
 
-Say It processes selected and copied text locally. It does not use analytics,
-telemetry, cloud inference, passive clipboard or microphone monitoring, Apple
-Events, or broad filesystem access. Its optional selection shortcut uses a
+Say It processes selected and copied text locally by default. It does not use
+analytics, telemetry, passive clipboard or microphone monitoring, Apple Events,
+or broad filesystem access. Cloud or remote inference happens only when you
+explicitly enable Advanced remote OpenAI-compatible TTS and speak text; the API
+key for that endpoint is stored in the Keychain. Its optional selection shortcut uses a
 dedicated Accessibility helper only when the user explicitly configures access
 or invokes that shortcut.
 
@@ -23,6 +25,11 @@ Say It app with that client entitlement. It exposes only authorization status,
 an authorization prompt, and an on-demand selected-text read; it does not
 monitor selection changes. Service lifecycle and API-token administration are
 never exposed over HTTP.
+
+The background speech agent enables App Transport Security local-network
+exceptions so Advanced remote TTS can reach user-run servers on a LAN. Prefer
+HTTPS for non-local endpoints. Remote API keys are stored in the Keychain and
+are never written to settings JSON.
 
 The optional HTTP API is disabled by default and binds only to `127.0.0.1`.
 It validates the loopback Host header, has no permissive CORS policy, limits

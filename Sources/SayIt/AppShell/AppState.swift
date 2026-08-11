@@ -58,6 +58,10 @@ final class AppState {
     private(set) var voiceProfiles: [VoiceProfileSnapshot] = []
     private(set) var voiceStudio: VoiceStudioSnapshot?
     private(set) var httpAPIErrorMessage: String?
+    private(set) var remoteTTSErrorMessage: String?
+    private(set) var remoteTTSAPIKeyMessage: String?
+    @ObservationIgnored
+    private var remoteTTSSettingsTask: Task<Void, Never>?
     private(set) var apiTokenErrorMessage: String?
     private(set) var oneTimeTokenSecret: String?
     private(set) var updateStatus = "Not checked yet"
@@ -905,19 +909,89 @@ final class AppState {
     }
 
     func updateHTTP(enabled: Bool, port: Int) {
-        var snapshot = backendSettings
-        snapshot.httpEnabled = enabled
-        snapshot.httpPort = port
-        backendSettings = snapshot
         httpAPIErrorMessage = nil
-        Task {
+        enqueueRemoteTTSSettingsWork { [weak self] in
+            guard let self else { return }
+            var snapshot = self.backendSettings
+            snapshot.httpEnabled = enabled
+            snapshot.httpPort = port
             do {
-                let response = try await send(.updateSettings(snapshot))
-                try requireSuccess(response)
+                let response = try await self.send(.updateSettings(snapshot))
+                try self.requireSuccess(response)
+                self.backendSettings = snapshot
             } catch {
-                httpAPIErrorMessage = error.localizedDescription
+                self.httpAPIErrorMessage = error.localizedDescription
             }
         }
+    }
+
+    func updateRemoteTTS(
+        enabled: Bool,
+        baseURL: String,
+        model: String,
+        voice: String,
+        timeoutSeconds: Double
+    ) {
+        enqueueRemoteTTSSettingsWork { [weak self] in
+            guard let self else { return }
+            var snapshot = self.backendSettings
+            snapshot.remoteTTSEnabled = enabled
+            snapshot.remoteTTSBaseURL = baseURL
+            snapshot.remoteTTSModel = model
+            snapshot.remoteTTSVoice = voice
+            snapshot.remoteTTSTimeoutSeconds = timeoutSeconds
+            self.remoteTTSErrorMessage = nil
+            do {
+                let response = try await self.send(.updateSettings(snapshot))
+                try self.requireSuccess(response)
+                // Merge only remote fields so a concurrent ordinary settings
+                // update that landed during await is not overwritten.
+                var latest = self.backendSettings
+                latest.remoteTTSEnabled = snapshot.remoteTTSEnabled
+                latest.remoteTTSBaseURL = snapshot.remoteTTSBaseURL
+                latest.remoteTTSModel = snapshot.remoteTTSModel
+                latest.remoteTTSVoice = snapshot.remoteTTSVoice
+                latest.remoteTTSTimeoutSeconds = snapshot.remoteTTSTimeoutSeconds
+                self.backendSettings = latest
+            } catch {
+                self.remoteTTSErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func setRemoteTTSAPIKey(_ key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        enqueueRemoteTTSSettingsWork { [weak self] in
+            guard let self else { return }
+            self.remoteTTSAPIKeyMessage = nil
+            self.remoteTTSErrorMessage = nil
+            do {
+                let response = try await self.send(
+                    .setRemoteTTSAPIKey(trimmed.isEmpty ? nil : trimmed)
+                )
+                try self.requireSuccess(response)
+                self.remoteTTSAPIKeyMessage = trimmed.isEmpty
+                    ? "API key cleared."
+                    : "API key saved in the Keychain."
+            } catch {
+                self.remoteTTSErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func enqueueRemoteTTSSettingsWork(
+        _ operation: @escaping @MainActor () async -> Void
+    ) {
+        let previous = remoteTTSSettingsTask
+        remoteTTSSettingsTask = Task { @MainActor in
+            _ = await previous?.value
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+    }
+
+    func clearRemoteTTSAPIKey() {
+        setRemoteTTSAPIKey("")
     }
 
     func restartBackgroundService() {
@@ -1307,16 +1381,24 @@ final class AppState {
         settingsPushTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(200))
             guard let self, !Task.isCancelled else { return }
-            let snapshot = self.settings.backendSnapshot(
-                httpEnabled: self.backendSettings.httpEnabled,
-                httpPort: self.backendSettings.httpPort
-            )
-            self.backendSettings = snapshot
-            do {
-                let response = try await self.send(.updateSettings(snapshot))
-                try self.requireSuccess(response)
-            } catch {
-                self.presentError(error.localizedDescription)
+            self.enqueueRemoteTTSSettingsWork { [weak self] in
+                guard let self else { return }
+                let snapshot = self.settings.backendSnapshot(
+                    httpEnabled: self.backendSettings.httpEnabled,
+                    httpPort: self.backendSettings.httpPort,
+                    remoteTTSEnabled: self.backendSettings.remoteTTSEnabled,
+                    remoteTTSBaseURL: self.backendSettings.remoteTTSBaseURL,
+                    remoteTTSModel: self.backendSettings.remoteTTSModel,
+                    remoteTTSVoice: self.backendSettings.remoteTTSVoice,
+                    remoteTTSTimeoutSeconds: self.backendSettings.remoteTTSTimeoutSeconds
+                )
+                do {
+                    let response = try await self.send(.updateSettings(snapshot))
+                    try self.requireSuccess(response)
+                    self.backendSettings = snapshot
+                } catch {
+                    self.presentError(error.localizedDescription)
+                }
             }
         }
     }

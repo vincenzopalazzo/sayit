@@ -171,6 +171,31 @@ struct BackendServiceCommandTests {
         value = original
         value.httpPort = 1_023
         invalidCases.append((value, "settings.invalid_http_port"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "not-a-url"
+        value.remoteTTSModel = "tts-1"
+        value.remoteTTSVoice = "alloy"
+        invalidCases.append((value, "settings.invalid_remote_tts_url"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "https://tts.example/v1"
+        value.remoteTTSModel = " "
+        value.remoteTTSVoice = "alloy"
+        invalidCases.append((value, "settings.invalid_remote_tts_model"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "https://tts.example/v1"
+        value.remoteTTSModel = "tts-1"
+        value.remoteTTSVoice = " "
+        invalidCases.append((value, "settings.invalid_remote_tts_voice"))
+        value = original
+        value.remoteTTSEnabled = true
+        value.remoteTTSBaseURL = "https://tts.example/v1"
+        value.remoteTTSModel = "tts-1"
+        value.remoteTTSVoice = "alloy"
+        value.remoteTTSTimeoutSeconds = 1
+        invalidCases.append((value, "settings.invalid_remote_tts_timeout"))
 
         for (settings, code) in invalidCases {
             let response = await fixture.service.handle(
@@ -214,6 +239,37 @@ struct BackendServiceCommandTests {
         )
         #expect(httpFailure.httpServiceError == "Port occupied")
         #expect(!httpFailure.settings.httpEnabled)
+    }
+
+    @Test("Disabling remote TTS re-checks that the active model is installed")
+    func disablingRemoteTTSRequiresInstalledModel() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.remove() }
+        await fixture.service.start()
+        let original = try snapshot(
+            await fixture.service.handle(.init(command: .snapshot))
+        ).settings
+
+        var remote = original
+        remote.remoteTTSEnabled = true
+        remote.remoteTTSBaseURL = "https://tts.example/v1"
+        remote.remoteTTSModel = "tts-1"
+        remote.remoteTTSVoice = "alloy"
+        #expect(
+            isAccepted(
+                await fixture.service.handle(
+                    .init(command: .updateSettings(remote))
+                )
+            )
+        )
+
+        var disabled = remote
+        disabled.remoteTTSEnabled = false
+        disabled.activeModelID = "missing-local-model"
+        let response = await fixture.service.handle(
+            .init(command: .updateSettings(disabled))
+        )
+        #expect(try failure(response).code == "settings.model_not_found")
     }
 
     @Test("Submission validation and queue commands are deterministic")

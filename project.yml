@@ -178,10 +178,8 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_ENTITLEMENTS: Config/SayItAgent.entitlements
         EXECUTABLE_NAME: SayItAgent
-        GENERATE_INFOPLIST_FILE: true
-        INFOPLIST_KEY_CFBundleDisplayName: Say It Background Service
-        INFOPLIST_KEY_LSBackgroundOnly: true
-        INFOPLIST_KEY_LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        GENERATE_INFOPLIST_FILE: false
+        INFOPLIST_FILE: Config/SayItAgent-Info.plist
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../../../../../Frameworks"
         PRODUCT_BUNDLE_IDENTIFIER: sh.sayit.mac.agent
         PRODUCT_NAME: SayItAgent

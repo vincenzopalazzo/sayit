@@ -54,7 +54,7 @@ struct ProtocolRoundTripTests {
             from: SayItWireCodec.encode(request)
         )
         #expect(decodedRequest == request)
-        #expect(SayItProtocolVersion.current == 6)
+        #expect(SayItProtocolVersion.current == 7)
     }
 
     @Test
@@ -398,5 +398,50 @@ struct ProtocolRoundTripTests {
 
         #expect(decoded.includesContent)
         #expect(decoded.spokenText == "Hello")
+    }
+
+    @Test
+    func remoteTTSSettingsAndAPIKeyCommandRoundTrip() throws {
+        var settings = BackendSettingsSnapshot()
+        settings.remoteTTSEnabled = true
+        settings.remoteTTSBaseURL = "https://gpu.example/v1"
+        settings.remoteTTSModel = "tts-1"
+        settings.remoteTTSVoice = "alloy"
+        settings.remoteTTSTimeoutSeconds = 90
+
+        let settingsData = try JSONEncoder().encode(settings)
+        let decodedSettings = try JSONDecoder().decode(
+            BackendSettingsSnapshot.self,
+            from: settingsData
+        )
+        #expect(decodedSettings.remoteTTSEnabled)
+        #expect(decodedSettings.remoteTTSBaseURL == "https://gpu.example/v1")
+        #expect(decodedSettings.remoteTTSModel == "tts-1")
+        #expect(decodedSettings.remoteTTSVoice == "alloy")
+        #expect(decodedSettings.remoteTTSTimeoutSeconds == 90)
+
+        let request = ServiceRequest(command: .setRemoteTTSAPIKey("secret"))
+        let requestData = try JSONEncoder().encode(request)
+        let decodedRequest = try JSONDecoder().decode(
+            ServiceRequest.self,
+            from: requestData
+        )
+        guard case .setRemoteTTSAPIKey(let key) = decodedRequest.command else {
+            Issue.record("Expected setRemoteTTSAPIKey")
+            return
+        }
+        #expect(key == "secret")
+
+        let clearRequest = ServiceRequest(command: .setRemoteTTSAPIKey(nil))
+        let clearData = try JSONEncoder().encode(clearRequest)
+        let decodedClear = try JSONDecoder().decode(
+            ServiceRequest.self,
+            from: clearData
+        )
+        guard case .setRemoteTTSAPIKey(let cleared) = decodedClear.command else {
+            Issue.record("Expected setRemoteTTSAPIKey nil")
+            return
+        }
+        #expect(cleared == nil)
     }
 }

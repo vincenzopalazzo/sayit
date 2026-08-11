@@ -23,7 +23,11 @@ struct ReadClipboardButton: View {
         .disabled(!state.isServiceOnline)
         .accessibilityHint(
             state.isServiceOnline
-                ? "Reads the clipboard once and speaks its text locally"
+                ? (
+                    state.backendSettings.remoteTTSEnabled
+                        ? "Reads the clipboard once and speaks its text using your configured remote TTS endpoint"
+                        : "Reads the clipboard once and speaks its text locally"
+                )
                 : "Unavailable until the background service connects"
         )
     }

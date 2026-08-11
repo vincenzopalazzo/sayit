@@ -16,6 +16,11 @@ public struct BackendSettingsSnapshot: Codable, Equatable, Sendable {
     public var historyQuotaBytes: Int64
     public var httpEnabled: Bool
     public var httpPort: Int
+    public var remoteTTSEnabled: Bool
+    public var remoteTTSBaseURL: String
+    public var remoteTTSModel: String
+    public var remoteTTSVoice: String
+    public var remoteTTSTimeoutSeconds: Double
     public var chunkCharacterTarget: Int
     public var chunkDelaySeconds: Double
     public var paragraphPauseSeconds: Double
@@ -43,6 +48,11 @@ public struct BackendSettingsSnapshot: Codable, Equatable, Sendable {
         historyQuotaBytes: Int64 = 2 * 1_024 * 1_024 * 1_024,
         httpEnabled: Bool = false,
         httpPort: Int = 59_125,
+        remoteTTSEnabled: Bool = false,
+        remoteTTSBaseURL: String = "",
+        remoteTTSModel: String = "",
+        remoteTTSVoice: String = "",
+        remoteTTSTimeoutSeconds: Double = 120,
         chunkCharacterTarget: Int = 650,
         chunkDelaySeconds: Double = 0,
         paragraphPauseSeconds: Double = 0.18,
@@ -69,6 +79,11 @@ public struct BackendSettingsSnapshot: Codable, Equatable, Sendable {
         self.historyQuotaBytes = historyQuotaBytes
         self.httpEnabled = httpEnabled
         self.httpPort = httpPort
+        self.remoteTTSEnabled = remoteTTSEnabled
+        self.remoteTTSBaseURL = remoteTTSBaseURL
+        self.remoteTTSModel = remoteTTSModel
+        self.remoteTTSVoice = remoteTTSVoice
+        self.remoteTTSTimeoutSeconds = remoteTTSTimeoutSeconds
         self.chunkCharacterTarget = chunkCharacterTarget
         self.chunkDelaySeconds = chunkDelaySeconds
         self.paragraphPauseSeconds = paragraphPauseSeconds
@@ -98,6 +113,11 @@ public struct BackendSettingsSnapshot: Codable, Equatable, Sendable {
         case historyQuotaBytes
         case httpEnabled
         case httpPort
+        case remoteTTSEnabled
+        case remoteTTSBaseURL
+        case remoteTTSModel
+        case remoteTTSVoice
+        case remoteTTSTimeoutSeconds
         case chunkCharacterTarget
         case chunkDelaySeconds
         case paragraphPauseSeconds
@@ -175,6 +195,26 @@ public struct BackendSettingsSnapshot: Codable, Equatable, Sendable {
             Int.self,
             forKey: .httpPort
         ) ?? 59_125
+        remoteTTSEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .remoteTTSEnabled
+        ) ?? false
+        remoteTTSBaseURL = try container.decodeIfPresent(
+            String.self,
+            forKey: .remoteTTSBaseURL
+        ) ?? ""
+        remoteTTSModel = try container.decodeIfPresent(
+            String.self,
+            forKey: .remoteTTSModel
+        ) ?? ""
+        remoteTTSVoice = try container.decodeIfPresent(
+            String.self,
+            forKey: .remoteTTSVoice
+        ) ?? ""
+        remoteTTSTimeoutSeconds = try container.decodeIfPresent(
+            Double.self,
+            forKey: .remoteTTSTimeoutSeconds
+        ) ?? 120
         chunkCharacterTarget = try container.decodeIfPresent(
             Int.self,
             forKey: .chunkCharacterTarget
